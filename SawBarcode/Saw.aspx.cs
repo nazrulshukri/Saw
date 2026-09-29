@@ -84,11 +84,34 @@ namespace SawBarcode
 
         protected void Page_Load(object sender, EventArgs e)
         {
+            // cbBimline is null when the designer field is not wired to the markup
+            // (old compiled page / designer out of date): look it up in the form instead
+            if (cbBimline == null)
+                cbBimline = FindControlRecursive(this, "cbBimline") as DropDownList;
+            if (cbBimline == null)
+            {
+                Response.Write("<script>alert('Saw.aspx has no cbBimline dropdown. Replace Saw.aspx with the full file and rebuild.');</script>");
+                return;
+            }
+
             if (!IsPostBack)
             {
                 cbBimline.Items.Clear();
                 readBimLine();
             }
+        }
+
+        private static System.Web.UI.Control FindControlRecursive(System.Web.UI.Control root, string id)
+        {
+            if (root.ID == id)
+                return root;
+            foreach (System.Web.UI.Control child in root.Controls)
+            {
+                System.Web.UI.Control found = FindControlRecursive(child, id);
+                if (found != null)
+                    return found;
+            }
+            return null;
         }
 
         public void readBimLine()
