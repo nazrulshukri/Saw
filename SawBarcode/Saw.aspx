@@ -77,6 +77,27 @@
                try { localStorage.setItem(PRINTER_KEY, uid); } catch (e) { }
            }
 
+           function setDropdownMessage(msg) {
+               var sel = document.getElementById("printerSelect");
+               if (sel == null) return;
+               sel.options.length = 0;
+               sel.options.add(new Option(msg, ""));
+           }
+
+           // "Setup" button: how a user adds their own USB or IP printer
+           function showPrinterSetup() {
+               alert("PRINTER SETUP\n\n" +
+                   "USB printer:\n" +
+                   " 1. Plug the Zebra printer into this PC and install its driver.\n" +
+                   " 2. Start 'Zebra Browser Print' (system tray) and tick 'Driver Search' in its settings.\n" +
+                   " 3. Come back here: the printer appears in the list within a few seconds. Choose it.\n\n" +
+                   "Network (IP) printer:\n" +
+                   " 1. Open 'Zebra Browser Print' > Settings > Added Devices > Manage and add the printer's IP address\n" +
+                   "    (or add it in Windows: Printers & scanners > Add device > Add manually > IP address).\n" +
+                   " 2. Click 'Refresh' here, then choose it in the list.\n\n" +
+                   "Your choice is remembered on this PC.");
+           }
+
            // Fill the dropdown with every printer Browser Print can see on this PC
            function fillPrinterDropdown() {
                var sel = document.getElementById("printerSelect");
@@ -150,6 +171,7 @@
 
                if (typeof BrowserPrint === "undefined") {
                    setPrinterStatus("Zebra Browser Print not installed");
+                   setDropdownMessage("-- Browser Print not installed --");
                    callback(null);
                    return;
                }
@@ -162,7 +184,8 @@
                        finishPrinterPick(null, callback);
                    });
                }, function () {
-                   setPrinterStatus("Zebra Browser Print not running");
+                   setPrinterStatus("Zebra Browser Print not running - start it, then click Refresh (or click Setup)");
+                   setDropdownMessage("-- Browser Print not running --");
                    callback(null);
                }, "printer");
            }
@@ -458,7 +481,7 @@
                     <asp:Label ID="lblScanQty" runat="server" Font-Size="Smaller"></asp:Label>
                 </td>
                 <td class="auto-style7" >
-                    <%-- jZebra applet removed (no Java) --%></td> <td colspan="2" >Printer: <select id="printerSelect" onchange="onPrinterChange()" style="max-width:220px"><option value="">Loading...</option></select> <input type="button" value="Refresh" onclick="refreshPrinters()" /><br /><span id="printerStatusBar">Loading...</span></td>
+                    <%-- jZebra applet removed (no Java) --%></td> <td colspan="2" >Printer: <select id="printerSelect" onchange="onPrinterChange()" style="max-width:220px"><option value="">Loading...</option></select> <input type="button" value="Refresh" onclick="refreshPrinters()" /> <input type="button" value="Setup" onclick="showPrinterSetup()" /><br /><span id="printerStatusBar">Loading...</span></td>
                 <td class="auto-style1">
                     <asp:Button ID="btnAdd" runat="server" OnClick="btnAdd_Click" Text="Add" Width="74px" Visible="False" />
                 </td>
