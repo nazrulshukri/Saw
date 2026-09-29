@@ -58,15 +58,77 @@
            }
 
            // ===== Zebra Browser Print (replaces jZebra Java applet) =====
-           var PRINTER_NAME = "ZDesigner GX430t";   // same printer as before
+           var PRINTER_NAME = "ZDesigner GX430t";   // preferred printer when the user has not chosen one yet
+           var PRINTER_KEY = "sawSelectedPrinter";  // localStorage key: remembers each user's choice on their own PC
            var zebraPrinter = null;
+           var printerList = [];
 
            function setPrinterStatus(info) {
                var bar = document.getElementById("printerStatusBar");
                if (bar != null) bar.innerHTML = info;
            }
 
-           // Find the local Zebra printer, then call callback(device or null)
+           function getSavedPrinter() {
+               try { return localStorage.getItem(PRINTER_KEY); } catch (e) { return null; }
+           }
+
+           function savePrinter(uid) {
+               try { localStorage.setItem(PRINTER_KEY, uid); } catch (e) { }
+           }
+
+           // Fill the dropdown with every printer Browser Print can see on this PC
+           function fillPrinterDropdown() {
+               var sel = document.getElementById("printerSelect");
+               if (sel == null) return;
+               sel.options.length = 0;
+               if (printerList.length == 0) {
+                   sel.options.add(new Option("-- No printer found --", ""));
+                   return;
+               }
+               for (var i = 0; i < printerList.length; i++) {
+                   var d = printerList[i];
+                   var label = d.name + (d.connection ? " (" + d.connection + ")" : "");
+                   var opt = new Option(label, d.uid);
+                   opt.selected = (zebraPrinter != null && zebraPrinter.uid == d.uid);
+                   sel.options.add(opt);
+               }
+           }
+
+           // Choose the printer: saved choice, then PRINTER_NAME, then the first one found
+           function pickPrinter() {
+               var saved = getSavedPrinter();
+               var found = null;
+               for (var i = 0; i < printerList.length && found == null; i++) {
+                   if (saved && printerList[i].uid == saved) found = printerList[i];
+               }
+               for (var j = 0; j < printerList.length && found == null; j++) {
+                   if (printerList[j].name && printerList[j].name.indexOf(PRINTER_NAME) >= 0) found = printerList[j];
+               }
+               if (found == null && printerList.length > 0) found = printerList[0];
+               return found;
+           }
+
+           // Called when the user picks a printer from the dropdown
+           function onPrinterChange() {
+               var sel = document.getElementById("printerSelect");
+               for (var i = 0; i < printerList.length; i++) {
+                   if (printerList[i].uid == sel.value) {
+                       zebraPrinter = printerList[i];
+                       savePrinter(zebraPrinter.uid);
+                       setPrinterStatus("Printer \"" + zebraPrinter.name + "\" is ready");
+                       return;
+                   }
+               }
+           }
+
+           // Re-scan for printers (Refresh button)
+           function refreshPrinters() {
+               zebraPrinter = null;
+               setPrinterStatus("Searching printers...");
+               findZebraPrinter(function () { });
+           }
+
+           // Find the selected local printer, then call callback(device or null)
            function findZebraPrinter(callback) {
                if (zebraPrinter != null) { callback(zebraPrinter); return; }
 
@@ -77,28 +139,16 @@
                }
 
                BrowserPrint.getLocalDevices(function (devices) {
-                   for (var i = 0; i < devices.length; i++) {
-                       if (devices[i].name && devices[i].name.indexOf(PRINTER_NAME) >= 0) {
-                           zebraPrinter = devices[i];
-                           break;
-                       }
-                   }
+                   printerList = devices || [];
+                   zebraPrinter = pickPrinter();
+                   fillPrinterDropdown();
 
                    if (zebraPrinter != null) {
                        setPrinterStatus("Printer \"" + zebraPrinter.name + "\" is ready");
-                       callback(zebraPrinter);
                    } else {
-                       // Fallback: Browser Print default printer
-                       BrowserPrint.getDefaultDevice("printer", function (device) {
-                           zebraPrinter = device;
-                           if (device != null) setPrinterStatus("Printer \"" + device.name + "\" is ready");
-                           else setPrinterStatus("Printer Not Ready");
-                           callback(device);
-                       }, function () {
-                           setPrinterStatus("Printer Not Ready");
-                           callback(null);
-                       });
+                       setPrinterStatus("Printer Not Ready");
                    }
+                   callback(zebraPrinter);
                }, function () {
                    setPrinterStatus("Zebra Browser Print not running");
                    callback(null);
@@ -356,7 +406,7 @@
                     <asp:Label ID="lblScanQty" runat="server" Font-Size="Smaller"></asp:Label>
                 </td>
                 <td class="auto-style7" >
-                    <%-- jZebra applet removed (no Java) --%></td> <td colspan="2" ><span id="printerStatusBar">Loading...</span></td>
+                    <%-- jZebra applet removed (no Java) --%></td> <td colspan="2" >Printer: <select id="printerSelect" onchange="onPrinterChange()" style="max-width:220px"><option value="">Loading...</option></select> <input type="button" value="Refresh" onclick="refreshPrinters()" /><br /><span id="printerStatusBar">Loading...</span></td>
                 <td class="auto-style1">
                     <asp:Button ID="btnAdd" runat="server" OnClick="btnAdd_Click" Text="Add" Width="74px" Visible="False" />
                 </td>
