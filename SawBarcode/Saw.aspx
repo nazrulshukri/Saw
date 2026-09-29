@@ -45,7 +45,6 @@
 
 
     <body style="background-color:#E6E6FA" onload="initPrinter()">
-    <script type="text/javascript" src="js/jzebra.js"></script>
 
 
        <script type="text/javascript" >
