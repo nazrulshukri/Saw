@@ -2,23 +2,26 @@
 
 ASP.NET Web Forms app (.NET Framework 4.0) for printing saw labels to a Zebra printer.
 
-## Label printing (no Java)
+## Label printing (jZebra / Java)
 
-The old jZebra Java applet (`js/jzebra.jar`) has been replaced in `Saw.aspx` by
-**Zebra Browser Print**. Labels still print to the same local printer
-(`ZDesigner GX430t`) on each operator PC; only Java is removed.
+`Saw.aspx` prints ZPL labels with the jZebra 1.5.6 Java applet (`js/jzebra.jar`).
 
-Setup on each operator PC:
-1. Install **Zebra Browser Print** (free, from the Zebra support site).
-2. Open Browser Print and check that `ZDesigner GX430t` is listed.
-3. On the first print, accept the site in the Browser Print prompt.
+- **No hardcoded printer.** After Java starts, the page asks jZebra for the printers on the
+  PC and picks the one used last time on that PC (saved in a cookie), otherwise the first
+  printer whose name contains `ZDesigner` / `Zebra` / `ZPL`. The operator can pick another
+  printer from the list next to the status text; the choice is remembered.
+- **No hang on the Java "Run" prompt.** The page does not call the applet until jZebra
+  reports it is ready (`jzebraReady`) and never loops waiting on it. A label requested
+  earlier (e.g. right after a postback) waits in a queue and prints once Java is running
+  and a printer is selected.
+- A postback (e.g. PrintAll) waits until its label has been sent, so the page reload does
+  not stop Java in the middle of printing.
 
-Project setup:
-- Copy the Browser Print JavaScript SDK (e.g. `BrowserPrint-3.1.250.min.js`, included in the
-  Browser Print download) into `SawBarcode/js/`. If the version differs, update the
-  `<script src="js/BrowserPrint-...">` line in `Saw.aspx`.
+Each operator PC needs Java with the site allowed to run the applet (click **Run** on the
+Java prompt, or add the site to the Java Exception Site List).
 
-Still using the Java applet (not yet converted): `SawSpecial.aspx`, `SawBarcode.aspx`.
+Not changed yet (still the old blocking code with `ZDesigner GX430t` hardcoded):
+`SawSpecial.aspx`, `SawBarcode.aspx`.
 
 ## Configuration
 
