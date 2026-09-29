@@ -239,6 +239,9 @@
     <Content Include="image\DOSPrinter.exe">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
+    <Content Include="js\BrowserPrint-shim.js">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
     <Content Include="js\html2canvas.js">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
