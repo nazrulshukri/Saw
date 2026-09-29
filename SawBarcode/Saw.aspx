@@ -161,6 +161,46 @@
                }, "printer");
            }
 
+           // Auto-detect: re-check every few seconds so a printer plugged in (USB) or removed shows up without clicking Refresh
+           var pollBusy = false;
+           function pollPrinters() {
+               if (pollBusy || typeof BrowserPrint === "undefined") return;
+               pollBusy = true;
+               BrowserPrint.getLocalDevices(function (devices) {
+                   pollBusy = false;
+                   devices = devices || [];
+                   var oldIds = printerList.map(function (d) { return d.uid; }).join("|");
+                   var newIds = devices.map(function (d) { return d.uid; }).join("|");
+                   if (oldIds == newIds) return;   // nothing changed
+
+                   var added = null;
+                   for (var i = 0; i < devices.length && added == null; i++) {
+                       if (oldIds.split("|").indexOf(devices[i].uid) < 0) added = devices[i];
+                   }
+                   printerList = devices;
+
+                   // keep the current printer if it is still connected
+                   var stillThere = false;
+                   for (var j = 0; j < devices.length; j++) {
+                       if (zebraPrinter != null && devices[j].uid == zebraPrinter.uid) { zebraPrinter = devices[j]; stillThere = true; }
+                   }
+                   if (stillThere) {
+                       fillPrinterDropdown();
+                       if (added != null) setPrinterStatus("New printer detected: \"" + added.name + "\"");
+                       return;
+                   }
+
+                   // current printer was unplugged (or none was selected yet): pick again
+                   zebraPrinter = null;
+                   BrowserPrint.getDefaultDevice("printer", function (defaultDevice) {
+                       finishPrinterPick(defaultDevice, function () { });
+                   }, function () {
+                       finishPrinterPick(null, function () { });
+                   });
+               }, function () { pollBusy = false; }, "printer");
+           }
+           setInterval(pollPrinters, 5000);
+
            function detectPrinter() {
                findZebraPrinter(function () { });
            }
