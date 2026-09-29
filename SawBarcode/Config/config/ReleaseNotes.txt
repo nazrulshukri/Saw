@@ -1,0 +1,5 @@
+Saw Barcode Label System - Release Version   
+2022-02-07 Version V2019.2.2-add new function to Enable/Disable wafer FAB ATBK.
+202206021115-V2019.2.3-fabname()-add rule for FAB:ICN8, crystal:74LVC1G97/Ar/8-DAF-150um, WOID:FBFK03.1, OCRID:FBFK03-01F3
+202209021100-V2019.2.4-bugfix-different MWO update in dbo.SawLabel.
+202404261220-V2019.2.5-fabname()-add rule for FAB:ICN8, MWO:P132346949, crystal:74AUP1G32/CBT/8R-DAF-75um, WOID:W-C3K340-0-1 to OCRID:C3K340W01D7.

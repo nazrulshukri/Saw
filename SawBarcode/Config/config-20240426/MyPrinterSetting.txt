@@ -1,0 +1,3 @@
+DefaultWBI,myg00126,NXPnxp@!~
+mysermys1ms001,DefaultPrinterPath,\\mygsermys1mst03\mesbt03
+mygsermys1ms001,DefaultLabelFilePath,\\mygsermys1ms001\data

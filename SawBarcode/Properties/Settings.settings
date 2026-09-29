@@ -1,0 +1,9 @@
+﻿<?xml version='1.0' encoding='utf-8'?>
+<SettingsFile xmlns="http://schemas.microsoft.com/VisualStudio/2004/01/settings" CurrentProfile="(Default)" GeneratedClassNamespace="SawBarcode.Properties" GeneratedClassName="Settings">
+  <Profiles />
+  <Settings>
+    <Setting Name="SawBarcode_camstarProd_Ad_HocTxn" Type="(Web Service URL)" Scope="Application">
+      <Value Profile="(Default)">http://myser01vww01/Minsc.WebService.AI/Ad-HocTxn.asmx</Value>
+    </Setting>
+  </Settings>
+</SettingsFile>

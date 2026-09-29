@@ -1,0 +1,39 @@
+2026-05-25 Version V2019.2.6.3
+add error handle without show critical information.
+
+2026-03-12 Version V2019.2.6.2
+createFWMSaw-add new function support .142 format.
+  if (awacsresponse.Contains(content) == true) // if (content.Contains("swm is not valid") == true)
+  {//2026Mar12-JB-142 format
+      url = "http://" + myhost + "/template/createmapfromswm.html?auth=swm:swm54321&swm=" + swm + ".142&ocrid=" + SawPrefix + ocrid;
+createFWMSaw-modified created Simple-FullWaferMap files copy directory to config.
+
+2025-08-05 Version V2019.2.6.1
+fabname(), fab:WSS-DTJX, WaferBatch/NXPDIFFUSIONBATCH:AE00749, WaferID/WAFERSCRIBEMUNBER:W-AE00749-009, 
+crystal:LSF0101/A1w/12R-DAF-150um;LSF0101/A1w/12R-DAF-75um, WOID:TWPE32001000/TWPE32003000/TWPE32002000
+
+if (fab.Trim() == "")
+  { //MWO:P132805637, WAFERSCRIBEMUNBER:W-AE00749-009 to ocrid:AE00749-09-A0
+      myWaferBatch = wf[1].Substring(0, 7) + "-" + wf[2].Substring(1, 2) + "-";
+  }
+
+2024-07-17 Version V2019.2.6
+fabname(), fab:UMC8C, NXPDIFFUSIONBATCH:DMRPL.1, NXPPRODUCTGROUP:NID5100GW-C, WAFERSCRIBEMUNBER:W-DMRPL.1-011,W-DMRPL.1-012, WOID:TWPD29450000,TWPD29451000
+system unable to support new fab UMC8C format.
+W-DMRPL.1-011 to generate OCRID:DMRPL11-E2
+W-DMRPL.1-012 to generate OCRID:DMRPL12-G5
+
+(Starting version V2019.2.6.xxx only released for none TATC)
+
+2024-04-29 Version V2019.2.5
+fabname(), fab:ICN8, WaferBatch:C3K34001-1, WaferID:C3K34001, crystal:74AUP1G32/CBT/8R-DAF-75um, WOID:TWPD16BGE000
+nonstandard format: W-C3K340-0-1 to generate OCRID:C3K340W01D7.
+
+2022-09-02 Version V2019.2.4
+202209021100-V2019.2.4-bugfix-different MWO update in dbo.SawLabel.
+
+2022-06-02 Version V2019.2.3
+202206021115-V2019.2.3-fabname()-add rule for FAB:ICN8, crystal:74LVC1G97/Ar/8-DAF-150um, WOID:FBFK03.1, OCRID:FBFK03-01F3
+
+2022-02-07 Version V2019.2.2
+fabname(), add new function to Enable/Disable wafer FAB ATBK

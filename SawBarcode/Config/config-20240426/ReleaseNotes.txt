@@ -1,0 +1,18 @@
+2022-02-07 Version V2019.2.2
+fabname(), add new function to Enable/Disable wafer FAB ATBK
+
+2022-06-02 Version V2019.2.3
+202206021115-V2019.2.3-fabname()-add rule for FAB:ICN8, crystal:74LVC1G97/Ar/8-DAF-150um, WOID:FBFK03.1, OCRID:FBFK03-01F3
+
+2022-09-02 Version V2019.2.4
+202209021100-V2019.2.4-bugfix-different MWO update in dbo.SawLabel.
+
+2024-04-29 Version V2019.2.5
+fabname(), fab:ICN8, WaferBatch:C3K34001-1, WaferID:C3K34001, crystal:74AUP1G32/CBT/8R-DAF-75um, WOID:TWPD16BGE000
+nonstandard format: W-C3K340-0-1 to generate OCRID:C3K340W01D7.
+
+2024-07-17 Version V2019.2.6
+fabname(), fab:UMC8C, NXPDIFFUSIONBATCH:DMRPL.1, NXPPRODUCTGROUP:NID5100GW-C, WAFERSCRIBEMUNBER:W-DMRPL.1-011,W-DMRPL.1-012, WOID:TWPD29450000,TWPD29451000
+system unable to support new fab UMC8C format.
+W-DMRPL.1-011 to generate OCRID:DMRPL11-E2
+W-DMRPL.1-012 to generate OCRID:DMRPL12-G5

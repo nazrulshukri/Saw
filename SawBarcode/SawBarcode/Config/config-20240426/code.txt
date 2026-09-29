@@ -1,0 +1,4 @@
+]:wafercode = 1 & statusFWM = 1
+ :wafercode = 0 & statusFWM = 1
+0S:wafercode = 1 & statusFWM = 0
+S:wafercode =0 & statusFWM = 0
