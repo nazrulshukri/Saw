@@ -20,7 +20,7 @@
 <body>
 
 
-    <script type="text/javascript" src="js/jzebra.js"></script>
+    <script type="text/javascript" src="js/zebra-print.js"></script>
     <body onload="detectPrinter()">
 
         <table width="75%" border="0" align="center" cellpadding="0" cellspacing="0">
@@ -35,10 +35,7 @@
                     </form>
                 </td>
                 <td width="53%">
-                    <applet name="jZebra" code="jzebra.RawPrintApplet.class" archive="js/jzebra.jar" width="100" height="100">
-                        <param name="printer" value="zebra">
-                        <param name="sleep" value="200">
-                    </applet>
+                    &nbsp;
                 </td>
             </tr>
         </table>
@@ -51,21 +48,23 @@
                printStruk(myModel.Prop1);
            }
 
-           function detectPrinter() {
-               var applet = document.jZebra;
-               if (applet != null) {
-                   applet.findPrinter("ZDesigner GX430t");
-                   while (!applet.isDoneFinding()) {
-                       // Wait
-                   }
-                   var ps = applet.getPrintService();
-                   if (ps == null) var info = "Printer belum siap";
-                   else var info = "Printer \"" + ps.getName() + "\" siap";
-               }
-               else
-                   var info = "Java Runtime belum siap!";
+           // Printing via Zebra Browser Print, see js/zebra-print.js (no Java)
+           var printerPoll = null;
+
+           function setPrinterStatus(info) {
                document.getElementById("printerStatusBar").innerHTML = info;
-               window.setTimeout('detectPrinter()', 5000);
+           }
+
+           function detectPrinter() {
+               if (typeof ZebraPrint === "undefined") {
+                   setPrinterStatus("js/zebra-print.js not found on the server");
+                   return;
+               }
+               ZebraPrint.detect(function (r) {
+                   setPrinterStatus(r.message);
+                   if (printerPoll != null) window.clearTimeout(printerPoll);
+                   printerPoll = window.setTimeout(detectPrinter, 5000);
+               });
            }
            function writetoelement(str) {
                var test = str;
@@ -82,34 +81,13 @@
            }
 
            function printStruk(str) {
-               window.setTimeout(testx, 5000);
-               //   detectPrinter();
-               var applet = document.jZebra;
-
+               if (typeof ZebraPrint === "undefined") {
+                   setPrinterStatus("js/zebra-print.js not found on the server");
+                   return;
+               }
+               // Waits until the data is sent (like the old applet call), then shows the result
                str = returnEnter(str);
-               applet.append(str);
-               // Send to the printer
-               applet.print();
-
-               if (applet != null) {
-                   // Plain Text
-                   str = returnEnter(str);
-                   applet.append(str);
-                   // Send to the printer
-                   applet.print();
-                   alert("printing now");
-                   alert(str);
-                   while (!applet.isDonePrinting()) {
-                       // Wait
-                   }
-                   var e = applet.getException();
-                   if (e == null) var info = "Printed Successfully";
-                   else var info = "Error: " + e.getLocalizedMessage();
-               }
-               else {
-                   var info = "Printer belum siap";
-               }
-               document.getElementById("printerStatusBar").innerHTML = info;
+               setPrinterStatus(ZebraPrint.print(str).message);
            }
 
            function returnEnter(dataStr) {

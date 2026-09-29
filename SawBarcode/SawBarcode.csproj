@@ -248,10 +248,10 @@
     <Content Include="js\jquery.plugin.html2canvas.js">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
-    <Content Include="js\jzebra.jar">
+    <Content Include="js\PluginDetect.js">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
-    <Content Include="js\PluginDetect.js">
+    <Content Include="js\zebra-print.js">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
     <Content Include="packages.config" />

@@ -45,8 +45,8 @@
 
 
     <body style="background-color:#E6E6FA" onload="detectPrinter()">
-    <%-- 2026-09-29: jZebra (Java) replaced by Zebra Browser Print. Same local printer, no Java. --%>
-    <script type="text/javascript" src="js/BrowserPrint-3.1.250.min.js"></script>
+    <%-- jZebra (Java applet) replaced by Zebra Browser Print. Same local printer, no Java. --%>
+    <script type="text/javascript" src="js/zebra-print.js"></script>
 
 
        <script type="text/javascript" >
@@ -57,56 +57,24 @@
                printStruk(myModel.Prop1);
            }
 
-           // ===== Zebra Browser Print (replaces jZebra Java applet) =====
-           var PRINTER_NAME = "ZDesigner GX430t";   // same printer as before
-           var zebraPrinter = null;
+           // ===== Printing via Zebra Browser Print, see js/zebra-print.js (no Java) =====
+           var printerPoll = null;
 
            function setPrinterStatus(info) {
                var bar = document.getElementById("printerStatusBar");
                if (bar != null) bar.innerHTML = info;
            }
 
-           // Find the local Zebra printer, then call callback(device or null)
-           function findZebraPrinter(callback) {
-               if (zebraPrinter != null) { callback(zebraPrinter); return; }
-
-               if (typeof BrowserPrint === "undefined") {
-                   setPrinterStatus("Zebra Browser Print not installed");
-                   callback(null);
+           function detectPrinter() {
+               if (typeof ZebraPrint === "undefined") {
+                   setPrinterStatus("js/zebra-print.js not found on the server");
                    return;
                }
-
-               BrowserPrint.getLocalDevices(function (devices) {
-                   for (var i = 0; i < devices.length; i++) {
-                       if (devices[i].name && devices[i].name.indexOf(PRINTER_NAME) >= 0) {
-                           zebraPrinter = devices[i];
-                           break;
-                       }
-                   }
-
-                   if (zebraPrinter != null) {
-                       setPrinterStatus("Printer \"" + zebraPrinter.name + "\" is ready");
-                       callback(zebraPrinter);
-                   } else {
-                       // Fallback: Browser Print default printer
-                       BrowserPrint.getDefaultDevice("printer", function (device) {
-                           zebraPrinter = device;
-                           if (device != null) setPrinterStatus("Printer \"" + device.name + "\" is ready");
-                           else setPrinterStatus("Printer Not Ready");
-                           callback(device);
-                       }, function () {
-                           setPrinterStatus("Printer Not Ready");
-                           callback(null);
-                       });
-                   }
-               }, function () {
-                   setPrinterStatus("Zebra Browser Print not running");
-                   callback(null);
-               }, "printer");
-           }
-
-           function detectPrinter() {
-               findZebraPrinter(function () { });
+               ZebraPrint.detect(function (r) {
+                   setPrinterStatus(r.message);
+                   if (printerPoll != null) window.clearTimeout(printerPoll);
+                   printerPoll = window.setTimeout(detectPrinter, 5000);
+               });
            }
            function writetoelement(str) {
                var test = str;
@@ -181,9 +149,6 @@
                //event.preventDefault();
                //alert(testx);
                //window.setTimeout(testx, 5000);
-               //alert("Start");
-               detectPrinter();
-               //alert("done");
 
                if (element != null && element.id != "btnPrintAll") {
                    var res = mapcodegenerate(element);
@@ -214,23 +179,14 @@
                    str = finalstr;
                }
 
-               // str = returnEnter(str);
-               // applet.append(str);
-               // Send to the printer
-               // applet.print();
-
-               // Send raw ZPL to the same local Zebra printer via Browser Print (no Java)
+               // Send raw ZPL to the local Zebra printer (no Java). This call waits until the
+               // data is sent, so "Print All" still prints before its postback reloads the page.
+               if (typeof ZebraPrint === "undefined") {
+                   setPrinterStatus("js/zebra-print.js not found on the server");
+                   return;
+               }
                str = returnEnter(str);
-               findZebraPrinter(function (device) {
-                   if (device == null) {
-                       setPrinterStatus("Printer is not ready");
-                       return;
-                   }
-                   setPrinterStatus("Printing...");
-                   device.send(str,
-                       function () { setPrinterStatus("Printed Successfully"); },
-                       function (err) { setPrinterStatus("Error: " + err); });
-               });
+               setPrinterStatus(ZebraPrint.print(str).message);
            }
 
            function returnEnter(dataStr) {
@@ -279,7 +235,7 @@
             <tr>
                 <td class="auto-style3" colspan="7" style="text-align: center"> <%--bgcolor="#42f49b"--%>
 
-                    <asp:Label ID="Label3" runat="server" Font-Names="Arial" Font-Size="XX-Large" Text="Saw Barcode Label System   V2019.2.6.3" ForeColor="#FF0066"></asp:Label>
+                    <asp:Label ID="Label3" runat="server" Font-Names="Arial" Font-Size="XX-Large" Text="Saw Barcode Label System   V2019.2.6.4" ForeColor="#FF0066"></asp:Label>
                 </td>
                 <td>&nbsp;</td>
             </tr>
