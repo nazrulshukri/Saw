@@ -63,9 +63,17 @@ public class PrintService : IHttpHandler
         foreach (string name in PrinterSettings.InstalledPrinters)
         {
             if (IsVirtualPrinter(name)) continue;   // PDF / XPS / OneNote / Fax are not label printers
+            // Only Zebra label printers (driver names start with "ZDesigner"), unless AllowedPrinters lists others
+            if (allowList == null && !IsZebraPrinter(name)) continue;
             if (allowList == null || allowList.Contains(name.ToLowerInvariant())) result.Add(name);
         }
         return result;
+    }
+
+    private static bool IsZebraPrinter(string name)
+    {
+        string n = name.ToLowerInvariant();
+        return n.Contains("zdesigner") || n.Contains("zebra");
     }
 
     private static bool IsVirtualPrinter(string name)
