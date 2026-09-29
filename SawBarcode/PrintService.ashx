@@ -62,9 +62,17 @@ public class PrintService : IHttpHandler
         }
         foreach (string name in PrinterSettings.InstalledPrinters)
         {
+            if (IsVirtualPrinter(name)) continue;   // PDF / XPS / OneNote / Fax are not label printers
             if (allowList == null || allowList.Contains(name.ToLowerInvariant())) result.Add(name);
         }
         return result;
+    }
+
+    private static bool IsVirtualPrinter(string name)
+    {
+        string n = name.ToLowerInvariant();
+        return n.Contains("print to pdf") || n.Contains("xps") || n.Contains("onenote")
+            || n.Contains("fax") || n.Contains("send to") || n.Contains("pdf");
     }
 
     private static string GetDefaultPrinter()
