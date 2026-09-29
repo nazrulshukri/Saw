@@ -46,7 +46,7 @@
 
     <body style="background-color:#E6E6FA" onload="detectPrinter()">
     <%-- 2026-09-29: jZebra (Java) replaced by Zebra Browser Print. Same local printer, no Java. --%>
-    <script type="text/javascript" src="js/BrowserPrint-3.1.250.min.js"></script>
+    <script type="text/javascript" src="js/BrowserPrint-shim.js"></script>
 
 
        <script type="text/javascript" >
