@@ -46,7 +46,8 @@
 
     <body style="background-color:#E6E6FA" onload="detectPrinter()">
     <%-- 2026-09-29: jZebra (Java) replaced by Zebra Browser Print. Same local printer, no Java. --%>
-    <script type="text/javascript" src="js/BrowserPrint-shim.js"></script>
+    <%-- Print mode (Web.config key "PrintMode"): "server" = the web server prints to printers installed on it (default); "browser" = Zebra Browser Print on the user's PC --%>
+    <script type="text/javascript" src="js/<%= ((System.Configuration.ConfigurationManager.AppSettings["PrintMode"] ?? "server").ToLower() == "browser") ? "BrowserPrint-shim.js" : "ServerPrint.js" %>"></script>
 
 
        <script type="text/javascript" >
@@ -60,6 +61,7 @@
            // ===== Zebra Browser Print (replaces jZebra Java applet) =====
            // Default printer set in Web.config (<add key="DefaultPrinterName" .../>); falls back to ZDesigner GX430t if the key is missing
            var DEFAULT_PRINTER_NAME = "<%= System.Web.HttpUtility.JavaScriptStringEncode(System.Configuration.ConfigurationManager.AppSettings["DefaultPrinterName"] ?? "ZDesigner GX430t") %>";
+           var PRINT_MODE = "<%= ((System.Configuration.ConfigurationManager.AppSettings["PrintMode"] ?? "server").ToLower() == "browser") ? "browser" : "server" %>";
            var PRINTER_KEY = "sawSelectedPrinter";  // localStorage key: remembers each user's choice on their own PC
            var zebraPrinter = null;
            var printerList = [];
@@ -86,6 +88,16 @@
 
            // "Setup" button: how a user adds their own USB or IP printer
            function showPrinterSetup() {
+               if (PRINT_MODE == "server") {
+                   alert("PRINTER SETUP\n\n" +
+                       "This page prints from the web server, so the list shows the printers installed on the SERVER.\n\n" +
+                       "To add a printer (ask IT / server admin):\n" +
+                       " 1. USB: plug the Zebra printer into the server and install the Zebra driver.\n" +
+                       "    Network: on the server, Settings > Printers & scanners > Add device > Add manually > IP address (Zebra driver).\n" +
+                       " 2. Click 'Refresh' here, then choose it in the list.\n\n" +
+                       "Your choice is remembered on this PC.");
+                   return;
+               }
                alert("PRINTER SETUP\n\n" +
                    "USB printer:\n" +
                    " 1. Plug the Zebra printer into this PC and install its driver.\n" +
@@ -170,8 +182,8 @@
                if (zebraPrinter != null) { callback(zebraPrinter); return; }
 
                if (typeof BrowserPrint === "undefined") {
-                   setPrinterStatus("Zebra Browser Print not installed");
-                   setDropdownMessage("-- Browser Print not installed --");
+                   setPrinterStatus(PRINT_MODE == "server" ? "Print script missing on the server (js/ServerPrint.js)" : "Zebra Browser Print not installed");
+                   setDropdownMessage(PRINT_MODE == "server" ? "-- Print script missing --" : "-- Browser Print not installed --");
                    callback(null);
                    return;
                }
@@ -184,8 +196,13 @@
                        finishPrinterPick(null, callback);
                    });
                }, function () {
-                   setPrinterStatus("Zebra Browser Print not running - start it, then click Refresh (or click Setup)");
-                   setDropdownMessage("-- Browser Print not running --");
+                   if (PRINT_MODE == "server") {
+                       setPrinterStatus("Cannot reach the print service on the server (PrintService.ashx) - click Refresh or tell IT");
+                       setDropdownMessage("-- Print service not reachable --");
+                   } else {
+                       setPrinterStatus("Zebra Browser Print not running - start it, then click Refresh (or click Setup)");
+                       setDropdownMessage("-- Browser Print not running --");
+                   }
                    callback(null);
                }, "printer");
            }
