@@ -481,7 +481,7 @@
                     <asp:Label ID="lblScanQty" runat="server" Font-Size="Smaller"></asp:Label>
                 </td>
                 <td class="auto-style7" >
-                    <%-- jZebra applet removed (no Java) --%></td> <td colspan="2" >Printer: <select id="printerSelect" onchange="onPrinterChange()" style="max-width:220px"><option value="">Loading...</option></select> <input type="button" value="Refresh" onclick="refreshPrinters()" /> <input type="button" value="Setup" onclick="showPrinterSetup()" /><br /><span id="printerStatusBar">Loading...</span></td>
+                    <%-- jZebra applet removed (no Java) --%></td> <td colspan="2" >&nbsp;</td>
                 <td class="auto-style1">
                     <asp:Button ID="btnAdd" runat="server" OnClick="btnAdd_Click" Text="Add" Width="74px" Visible="False" />
                 </td>
@@ -520,6 +520,14 @@
                         <asp:Button ID="btnDHAMDashNo" runat="server" Text="DHAM &quot;NODASH&quot;" Visible="False" />
                         <asp:Button ID="bSearch" runat="server" Height="35px" OnClick="btnPrint_Click" Text="Search" Width="112px" Visible="false"/>
 
+                        <%-- Printer chooser, right above the label table so users see which printer the Print buttons use --%>
+                        <div style="margin:8px 0; padding:6px; background:#ffffe0; border:1px solid #999; font-family:Arial; font-size:11pt;">
+                            <b>Print to printer:</b>
+                            <select id="printerSelect" onchange="onPrinterChange()" style="min-width:260px; font-size:11pt;"><option value="">Loading...</option></select>
+                            <input type="button" value="Refresh" onclick="refreshPrinters()" />
+                            <input type="button" value="Setup" onclick="showPrinterSetup()" />
+                            <br /><span id="printerStatusBar">Loading...</span>
+                        </div>
                         <asp:GridView ID="Gv1" runat="server" AlternatingRowStyle-BackColor="#e6f7ff" AutoGenerateColumns="false" Font-Names="Arial" Font-Size="11pt" HeaderStyle-BackColor="#66ccff" OnRowDataBound="Gv1_RowDataBound"><%--OnRowCommand="Gv1_RowCommand"--%>
                                 <Columns>
                                     <asp:BoundField DataField="Id" HeaderText="Id" ItemStyle-Width="50px" />
