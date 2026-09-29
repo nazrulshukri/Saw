@@ -58,6 +58,8 @@
            }
 
            // ===== Zebra Browser Print (replaces jZebra Java applet) =====
+           // Default printer set in Web.config (<add key="DefaultPrinterName" .../>); falls back to ZDesigner GX430t if the key is missing
+           var DEFAULT_PRINTER_NAME = "<%= System.Web.HttpUtility.JavaScriptStringEncode(System.Configuration.ConfigurationManager.AppSettings["DefaultPrinterName"] ?? "ZDesigner GX430t") %>";
            var PRINTER_KEY = "sawSelectedPrinter";  // localStorage key: remembers each user's choice on their own PC
            var zebraPrinter = null;
            var printerList = [];
@@ -98,6 +100,10 @@
                var saved = getSavedPrinter();
                for (var i = 0; i < printerList.length; i++) {
                    if (saved && printerList[i].uid == saved) return printerList[i];
+               }
+               // the site's default printer (Web.config key "DefaultPrinterName"), used until the user picks another
+               for (var k = 0; k < printerList.length; k++) {
+                   if (DEFAULT_PRINTER_NAME && printerList[k].name && printerList[k].name.indexOf(DEFAULT_PRINTER_NAME) >= 0) return printerList[k];
                }
                if (defaultDevice != null) {
                    for (var j = 0; j < printerList.length; j++) {
