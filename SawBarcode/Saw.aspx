@@ -58,7 +58,6 @@
            }
 
            // ===== Zebra Browser Print (replaces jZebra Java applet) =====
-           var PRINTER_NAME = "ZDesigner GX430t";   // preferred printer when the user has not chosen one yet
            var PRINTER_KEY = "sawSelectedPrinter";  // localStorage key: remembers each user's choice on their own PC
            var zebraPrinter = null;
            var printerList = [];
@@ -94,18 +93,18 @@
                }
            }
 
-           // Choose the printer: saved choice, then PRINTER_NAME, then the first one found
-           function pickPrinter() {
+           // Choose the printer: the user's saved choice, else the Browser Print default, else the first one found
+           function pickPrinter(defaultDevice) {
                var saved = getSavedPrinter();
-               var found = null;
-               for (var i = 0; i < printerList.length && found == null; i++) {
-                   if (saved && printerList[i].uid == saved) found = printerList[i];
+               for (var i = 0; i < printerList.length; i++) {
+                   if (saved && printerList[i].uid == saved) return printerList[i];
                }
-               for (var j = 0; j < printerList.length && found == null; j++) {
-                   if (printerList[j].name && printerList[j].name.indexOf(PRINTER_NAME) >= 0) found = printerList[j];
+               if (defaultDevice != null) {
+                   for (var j = 0; j < printerList.length; j++) {
+                       if (printerList[j].uid == defaultDevice.uid) return printerList[j];
+                   }
                }
-               if (found == null && printerList.length > 0) found = printerList[0];
-               return found;
+               return printerList.length > 0 ? printerList[0] : null;
            }
 
            // Called when the user picks a printer from the dropdown
@@ -128,6 +127,17 @@
                findZebraPrinter(function () { });
            }
 
+           function finishPrinterPick(defaultDevice, callback) {
+               zebraPrinter = pickPrinter(defaultDevice);
+               fillPrinterDropdown();
+               if (zebraPrinter != null) {
+                   setPrinterStatus("Printer \"" + zebraPrinter.name + "\" is ready");
+               } else {
+                   setPrinterStatus("Printer Not Ready");
+               }
+               callback(zebraPrinter);
+           }
+
            // Find the selected local printer, then call callback(device or null)
            function findZebraPrinter(callback) {
                if (zebraPrinter != null) { callback(zebraPrinter); return; }
@@ -140,15 +150,11 @@
 
                BrowserPrint.getLocalDevices(function (devices) {
                    printerList = devices || [];
-                   zebraPrinter = pickPrinter();
-                   fillPrinterDropdown();
-
-                   if (zebraPrinter != null) {
-                       setPrinterStatus("Printer \"" + zebraPrinter.name + "\" is ready");
-                   } else {
-                       setPrinterStatus("Printer Not Ready");
-                   }
-                   callback(zebraPrinter);
+                   BrowserPrint.getDefaultDevice("printer", function (defaultDevice) {
+                       finishPrinterPick(defaultDevice, callback);
+                   }, function () {
+                       finishPrinterPick(null, callback);
+                   });
                }, function () {
                    setPrinterStatus("Zebra Browser Print not running");
                    callback(null);
