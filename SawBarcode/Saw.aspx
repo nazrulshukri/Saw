@@ -170,7 +170,15 @@
                zebraPrinter = pickPrinter(defaultDevice);
                fillPrinterDropdown();
                if (zebraPrinter != null) {
-                   setPrinterStatus("Printer \"" + zebraPrinter.name + "\" is ready");
+                   var msg = "Printer \"" + zebraPrinter.name + "\" is ready";
+                   var hasDefault = false;
+                   for (var i = 0; i < printerList.length; i++) {
+                       if (DEFAULT_PRINTER_NAME && printerList[i].name && printerList[i].name.indexOf(DEFAULT_PRINTER_NAME) >= 0) hasDefault = true;
+                   }
+                   if (DEFAULT_PRINTER_NAME && !hasDefault) {
+                       msg += " - note: \"" + DEFAULT_PRINTER_NAME + "\" is not installed on " + (PRINT_MODE == "server" ? "the server" : "this PC");
+                   }
+                   setPrinterStatus(msg);
                } else {
                    setPrinterStatus("Printer Not Ready");
                }
@@ -246,6 +254,25 @@
                }, function () { pollBusy = false; }, "printer");
            }
            setInterval(pollPrinters, 5000);
+
+           // Show a row's Print button only after Quarter or Half has been chosen for that row
+           function updatePrintButtons() {
+               var rows = document.querySelectorAll("#Gv1 tr");
+               for (var i = 0; i < rows.length; i++) {
+                   var btn = rows[i].querySelector("[Bmapcode]");
+                   if (btn == null) continue;   // header row
+                   var radios = rows[i].querySelectorAll("input[type=radio]");
+                   var chosen = false;
+                   for (var j = 0; j < radios.length; j++) {
+                       if (radios[j].checked) chosen = true;
+                   }
+                   btn.style.display = chosen ? "" : "none";
+               }
+           }
+           window.addEventListener("load", updatePrintButtons);
+           document.addEventListener("click", function (e) {
+               if (e.target && e.target.type == "radio") setTimeout(updatePrintButtons, 0);
+           });
 
            function detectPrinter() {
                findZebraPrinter(function () { });
