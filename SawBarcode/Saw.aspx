@@ -55,19 +55,20 @@
                printStruk(myModel.Prop1);
            }
 
-           // ===== Printer detection with Zebra Browser Print (no Java) =====
-           // A web page cannot see USB printers by itself. Zebra Browser Print (free, installed
-           // once on each operator PC) runs on the PC at http://127.0.0.1:9100 and gives the page
-           // the list of Zebra printers (USB / driver / network). The page picks the Zebra
-           // automatically - no printer name is hardcoded - and sends the ZPL label to it.
-           var BROWSER_PRINT_URL = "http://127.0.0.1:9100/";
+           // ===== Printer detection for jZebra (Java) =====
+           // No printer name is hardcoded: once Java has started, jZebra lists the printers
+           // on this PC and the Zebra one (or the one picked last time) is used.
+           // The page never calls the applet before Java says it is ready (jzebraReady) and
+           // never loops waiting on it, so it does not hang while the Java "Run" prompt is up.
+           // Labels are queued and printed as soon as Java and the printer are ready.
+           var ZEBRA_HINTS = ["zdesigner", "zebra", "zpl"];   // only used to auto-pick the printer
            var PRINTER_COOKIE = "SawPrinter";                 // printer picked on this PC
            var jz = {
-               ready: false,       // Browser Print answered
+               ready: false,       // jZebra has started (jzebraReady was called)
                finding: false,     // printer search running
-               printing: false,    // label being sent
-               printers: [],       // Browser Print devices found on this PC
-               printer: null,      // device used for labels
+               printing: false,    // label sent, waiting for jZebra to finish
+               printers: [],       // printer names found by jZebra
+               printerName: null,  // printer used for labels
                queue: [],          // labels waiting to be printed
                doPostBack: null,   // original ASP.NET __doPostBack
                postBack: null      // postback held until the labels are printed
@@ -98,126 +99,193 @@
                document.cookie = PRINTER_COOKIE + "=" + encodeURIComponent(name) + "; expires=" + expires.toUTCString() + "; path=/";
            }
 
-           // Call Browser Print on this PC. text/plain keeps it a simple CORS request.
-           function browserPrint(method, path, body, success, failure) {
-               var xhr = new XMLHttpRequest();
-               xhr.open(method, BROWSER_PRINT_URL + path, true);
-               xhr.timeout = 15000;
-               if (body != null) xhr.setRequestHeader("Content-Type", "text/plain;charset=UTF-8");
-               xhr.onreadystatechange = function () {
-                   if (xhr.readyState != 4) return;
-                   if (xhr.status == 200) success(xhr.responseText);
-                   else failure(xhr.status == 0 ? "Zebra Browser Print is not running on this PC" : "Browser Print error " + xhr.status + " " + xhr.responseText);
-               };
-               xhr.ontimeout = function () { failure("Zebra Browser Print did not answer"); };
-               xhr.send(body);
-           }
-
            function initPrinter() {
                holdPostBack();
-               detectPrinter();
+               window.setTimeout(function () {
+                   if (!jz.ready) setPrinterStatus("Java has not started. Click \"Run\" on the Java prompt, or check Java is installed and allowed for this site, then reload.");
+               }, 30000);
            }
 
-           // Search the Zebra printers on this PC (does not block the page)
+           // --- called by jZebra (Java) ---
+           function jzebraReady() {
+               jz.ready = true;
+               window.setTimeout(detectPrinter, 0);   // return to Java first, then use the applet
+           }
+
+           function jzebraDoneFinding() {
+               window.setTimeout(printersFound, 0);
+           }
+
+           function jzebraDonePrinting() {
+               window.setTimeout(printDone, 0);
+           }
+
+           // Search the printers on this PC. Does not wait: the result comes in printersFound().
            function detectPrinter() {
+               if (!jz.ready) {
+                   setPrinterStatus("Waiting for Java... click \"Run\" if Java asks");
+                   return;
+               }
                if (jz.finding) return;
                jz.finding = true;
                setPrinterStatus("Searching printers...");
-               browserPrint("GET", "available", null, function (text) {
+               try {
+                   // any search makes jZebra load the full printer list
+                   document.jZebra.findPrinter(readSavedPrinter() || ZEBRA_HINTS[0]);
+               }
+               catch (e) {
                    jz.finding = false;
-                   jz.ready = true;
-                   var list = [];
-                   try {
-                       var result = JSON.parse(text);
-                       var devices = result.printer || [];
-                       for (var i = 0; i < devices.length; i++)
-                           if (devices[i] && devices[i].name) list.push(devices[i]);
-                   }
-                   catch (e) { }
-                   printersFound(list);
-               }, function (err) {
-                   jz.finding = false;
-                   jz.ready = false;
-                   printersFound([]);
-                   setPrinterStatus(htmlEncode(err) + ". Install / start Zebra Browser Print, then click \"Find printers\".");
-               });
+                   setPrinterStatus("Java error: " + htmlEncode(e.message));
+                   return;
+               }
+               window.setTimeout(checkFinding, 500);
            }
 
-           function printersFound(list) {
+           // Backup in case the jzebraDoneFinding callback does not arrive
+           function checkFinding() {
+               if (!jz.finding) return;
+               var done = true;
+               try { done = document.jZebra.isDoneFinding(); } catch (e) { }
+               if (done) printersFound();
+               else window.setTimeout(checkFinding, 500);
+           }
+
+           function printersFound() {
+               if (!jz.finding) return;   // already handled
+               jz.finding = false;
+
+               var list = [];
+               try {
+                   var names = document.jZebra.getPrinters();
+                   if (names != null) {
+                       names = String(names).split(",");
+                       for (var i = 0; i < names.length; i++)
+                           if (names[i] != "") list.push(names[i]);
+                   }
+               }
+               catch (e) { }
                jz.printers = list;
 
-               // Printer picked last time on this PC, else USB Zebra first, else the first one found
+               // Printer picked last time on this PC, else the first Zebra printer found
                var index = -1;
                var saved = readSavedPrinter();
-               for (var i = 0; i < list.length; i++)
-                   if (list[i].name == saved || list[i].uid == saved) { index = i; break; }
-               for (var i = 0; index < 0 && i < list.length; i++)
-                   if (String(list[i].connection).toLowerCase() == "usb") index = i;
-               if (index < 0 && list.length > 0) index = 0;
+               for (var i = 0; i < list.length; i++) {
+                   if (list[i] == saved) { index = i; break; }
+               }
+               for (var h = 0; index < 0 && h < ZEBRA_HINTS.length; h++) {
+                   for (var i = 0; i < list.length; i++) {
+                       if (list[i].toLowerCase().indexOf(ZEBRA_HINTS[h]) >= 0) { index = i; break; }
+                   }
+               }
 
                var sel = document.getElementById("printerList");
                if (sel != null) {
                    sel.options.length = 0;
                    sel.options[0] = new Option("-- select printer --", "-1");
                    for (var i = 0; i < list.length; i++)
-                       sel.options[sel.options.length] = new Option(list[i].name + " (" + list[i].connection + ")", String(i));
+                       sel.options[sel.options.length] = new Option(list[i], String(i));
                    sel.selectedIndex = index + 1;
                }
-               if (jz.ready) usePrinter(index);
+               usePrinter(index);
            }
 
            // Operator picked a printer from the list
            function choosePrinter(sel) {
                var index = parseInt(sel.value, 10);
-               if (index >= 0) savePrinter(jz.printers[index].uid || jz.printers[index].name);
+               if (index >= 0) savePrinter(jz.printers[index]);
                usePrinter(index);
            }
 
            function usePrinter(index) {
-               jz.printer = null;
+               jz.printerName = null;
                if (index < 0 || index >= jz.printers.length) {
-                   if (jz.printers.length == 0) setPrinterStatus("No Zebra printer found on this PC. Check the USB cable / power, then click \"Find printers\".");
+                   if (jz.printers.length == 0) setPrinterStatus("No printer found on this PC");
                    else setPrinterStatus("Printer Not Ready - select the Zebra printer from the list");
                    return;
                }
-               jz.printer = jz.printers[index];
-               setPrinterStatus("Printer \"" + htmlEncode(jz.printer.name) + "\" is ready");
+               try {
+                   document.jZebra.setPrinter(index);
+               }
+               catch (e) {
+                   setPrinterStatus("Java error: " + htmlEncode(e.message));
+                   return;
+               }
+               jz.printerName = jz.printers[index];
+               setPrinterStatus("Printer \"" + htmlEncode(jz.printerName) + "\" is ready");
                processQueue();
            }
 
-           // Print the next queued label once the printer is ready
+           // Print the next queued label once Java and the printer are ready
            function processQueue() {
                if (jz.printing || jz.finding) return;
                if (jz.queue.length == 0) {
                    releasePostBack();
                    return;
                }
-               if (jz.printer == null) {
-                   if (jz.ready) setPrinterStatus("Printer Not Ready - select the Zebra printer from the list to print");
+               if (!jz.ready) {
+                   setPrinterStatus("Waiting for Java... click \"Run\" if Java asks. The label will print after that.");
+                   return;
+               }
+               if (jz.printerName == null) {
+                   setPrinterStatus("Printer Not Ready - select the Zebra printer from the list to print");
                    return;
                }
 
                var data = jz.queue.shift();
+               var applet = document.jZebra;
+               // Send to the printer
+               alert("press to print");
+               try {
+                   applet.clearException();
+                   applet.clear();
+                   applet.append(data);
+                   applet.print();
+               }
+               catch (e) {
+                   printFailed("Error: " + htmlEncode(e.message));
+                   return;
+               }
                jz.printing = true;
-               setPrinterStatus("Printing to \"" + htmlEncode(jz.printer.name) + "\"...");
-               browserPrint("POST", "write", JSON.stringify({ device: jz.printer, data: data }), function () {
-                   jz.printing = false;
-                   setPrinterStatus("Printed Successfully");
-                   processQueue();   // next label, then the held postback
-               }, function (err) {
-                   jz.printing = false;
-                   printFailed("Error: " + htmlEncode(err));
-               });
+               setPrinterStatus("Printing to \"" + htmlEncode(jz.printerName) + "\"...");
+               window.setTimeout(checkPrinting, 500);
            }
 
-           // When printing fails the page does not post back
+           // Backup in case the jzebraDonePrinting callback does not arrive
+           function checkPrinting() {
+               if (!jz.printing) return;
+               var done = true;
+               try { done = document.jZebra.isDonePrinting(); } catch (e) { }
+               if (done) printDone();
+               else window.setTimeout(checkPrinting, 500);
+           }
+
+           function printDone() {
+               if (!jz.printing) return;   // already handled
+               jz.printing = false;
+
+               var error = null;
+               try {
+                   if (document.jZebra.getException() != null)
+                       error = String(document.jZebra.getExceptionMessage());
+               }
+               catch (e) { }
+
+               if (error != null) {
+                   printFailed("Error: " + htmlEncode(error));
+                   return;
+               }
+               setPrinterStatus("Printed Successfully");
+               processQueue();   // next label, then the held postback
+           }
+
+           // Same as before: when printing fails the page does not post back
            function printFailed(info) {
                jz.queue = [];
                jz.postBack = null;
                setPrinterStatus(info);
            }
 
-           // A postback reloads the page, so hold it (e.g. PrintAll)
+           // A postback reloads the page and stops Java, so hold it (e.g. PrintAll)
            // until the queued labels have been sent to the printer.
            function holdPostBack() {
                if (jz.doPostBack != null || typeof window.__doPostBack != "function") return;
@@ -342,8 +410,8 @@
                    str = finalstr;
                }
 
-               // Queue the label; processQueue() sends it with Browser Print as soon as
-               // the printer is found (no waiting loop here)
+               // Queue the label; processQueue() sends it with jZebra as soon as
+               // Java and the printer are ready (no waiting loop here)
                jz.queue.push(returnEnter(str));
                holdPostBack();
                processQueue();
@@ -472,7 +540,10 @@
                     <asp:Label ID="lblScanQty" runat="server" Font-Size="Smaller"></asp:Label>
                 </td>
                 <td class="auto-style7" >
-                    </td> <td colspan="2" ><span id="printerStatusBar">Searching printers...</span><br />
+                    <%-- no "printer" param: the printer is searched by the page (detectPrinter) after Java is ready --%>
+                    <applet name="jZebra" code="jzebra.RawPrintApplet.class" archive="js/jzebra.jar" mayscript="mayscript" style="height: 20px; width: 20px">
+                        <param name="sleep" value="200"/>
+                    </applet></td> <td colspan="2" ><span id="printerStatusBar">Waiting for Java... click "Run" if Java asks</span><br />
                     <select id="printerList" onchange="choosePrinter(this)" style="width: 250px"><option value="-1">-- select printer --</option></select>
                     <input type="button" value="Find printers" onclick="detectPrinter()" /></td>
                 <td class="auto-style1">
