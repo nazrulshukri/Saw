@@ -38,6 +38,18 @@ public sealed class AwacsOptions
     /// <summary>Extra attempts for read calls on network errors and HTTP 5xx. Updates are never retried.</summary>
     public int ReadRetryCount { get; set; } = 2;
 
+    /// <summary>
+    /// AWACS user that ACMS logs in with before changing or adding workstations. AWACS ignores changes
+    /// from sessions that are not logged in. Leave empty to not log in. Keep the password out of
+    /// source control: use user secrets or the environment variable Awacs__Password.
+    /// </summary>
+    public string? Username { get; set; }
+
+    public string? Password { get; set; }
+
+    /// <summary>AWACS login page; the user name and password are sent as Awacs_Username / Awacs_password.</summary>
+    public string LoginPath { get; set; } = "template/general/home.html";
+
     /// <summary>Send the application pool / service account identity to AWACS (Windows auth).</summary>
     public bool UseDefaultCredentials { get; set; } = true;
 

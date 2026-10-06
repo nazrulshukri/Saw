@@ -144,7 +144,14 @@ public sealed class ServerAdminService
         }
         else
         {
+            // People paste a page address such as .../template/general/status.html; keep only the site root.
             var text = uri.GetLeftPart(UriPartial.Path);
+            var template = text.IndexOf("/template/", StringComparison.OrdinalIgnoreCase);
+            if (template >= 0)
+            {
+                text = text[..template];
+            }
+
             normalizedBaseUrl = text.EndsWith('/') ? text : text + "/";
 
             if (normalizedBaseUrl.Length > 400)

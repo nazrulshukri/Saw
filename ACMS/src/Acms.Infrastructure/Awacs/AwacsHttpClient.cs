@@ -68,6 +68,12 @@ public sealed class AwacsHttpClient : IAwacsClient
             return new AwacsUpdateResult(false, ex.Message);
         }
 
+        var login = await LoginAsync(server, cancellationToken);
+        if (login is not null)
+        {
+            return new AwacsUpdateResult(false, login);
+        }
+
         var uri = BuildUri(server, _options.UpdatePath,
             "ws=" + Uri.EscapeDataString(wsId) + "&setwsattr=" + Uri.EscapeDataString(setWsAttr));
 
@@ -88,6 +94,41 @@ public sealed class AwacsHttpClient : IAwacsClient
         return marker is null
             ? new AwacsUpdateResult(true, null)
             : new AwacsUpdateResult(false, $"AWACS response contains '{marker}': {Truncate(body)}");
+    }
+
+    /// <summary>
+    /// Logs in on the AWACS server when a user is configured. The session is kept in the cookies of
+    /// this HttpClient. Returns an error text, or null when logged in (or no login is configured).
+    /// </summary>
+    private async Task<string?> LoginAsync(AwacsServer server, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrEmpty(_options.Username))
+        {
+            return null;
+        }
+
+        var uri = BuildUri(server, _options.LoginPath,
+            "Awacs_Username=" + Uri.EscapeDataString(_options.Username)
+            + "&Awacs_password=" + Uri.EscapeDataString(_options.Password ?? string.Empty));
+
+        try
+        {
+            using var response = await _http.GetAsync(uri, cancellationToken);
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+
+            // A logged-in AWACS page offers "Logout"; the login form has a password field instead.
+            if (response.IsSuccessStatusCode && body.Contains("Logout", StringComparison.OrdinalIgnoreCase))
+            {
+                return null;
+            }
+
+            _logger.LogWarning("AWACS login as {User} on {Server} failed (HTTP {Status})", _options.Username, server.Name, (int)response.StatusCode);
+            return $"Could not log in to AWACS '{server.Name}' as '{_options.Username}'. Check Awacs:Username and Awacs:Password.";
+        }
+        catch (HttpRequestException ex)
+        {
+            return $"Could not reach AWACS '{server.Name}' to log in: {ex.Message}";
+        }
     }
 
     private static Uri BuildUri(AwacsServer server, string relativePath, string query)

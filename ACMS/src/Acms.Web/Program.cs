@@ -19,6 +19,7 @@ builder.Services.AddRazorPages(options =>
     options.Conventions.AuthorizeFolder("/Admin", AcmsPolicies.CanAdminister);
     options.Conventions.AuthorizePage("/Equipment/Edit", AcmsPolicies.CanEditEquipment);
     options.Conventions.AuthorizePage("/Equipment/Bulk", AcmsPolicies.CanEditEquipment);
+    options.Conventions.AuthorizePage("/Equipment/Add", AcmsPolicies.CanEditEquipment);
     options.Conventions.AllowAnonymousToPage("/StatusCode");
     options.Conventions.AllowAnonymousToPage("/Error");
 });

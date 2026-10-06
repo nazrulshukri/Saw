@@ -33,6 +33,15 @@ public class ServerAdminServiceTests
         Assert.Contains("awacs01", entry.AfterJson);
     }
 
+    [Fact]
+    public async Task Create_keeps_only_the_site_root_of_a_pasted_page_address()
+    {
+        var result = await CreateService().CreateAsync(
+            new ServerInput("MS073", "http://myser01ms073.nws.nexperia.com:8080/template/general/status.html/", null), "admin");
+
+        Assert.Equal("http://myser01ms073.nws.nexperia.com:8080/", result.Server!.BaseUrl);
+    }
+
     [Theory]
     [InlineData("")]
     [InlineData("awacs01")]

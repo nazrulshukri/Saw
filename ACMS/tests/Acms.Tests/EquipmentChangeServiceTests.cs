@@ -257,6 +257,44 @@ public class EquipmentChangeServiceTests
     }
 
     [Fact]
+    public async Task Creates_a_new_workstation_and_audits_it_as_an_add()
+    {
+        _rules.KnownAttributes = ["COMPUTER", "SPEED_SPEC"];
+
+        var result = await CreateService().CreateAsync(
+            new EquipmentCreateRequest(1, "DB-QE1-001S", new Dictionary<string, string> { ["COMPUTER"] = "db-qe1-001s", ["SPEED_SPEC"] = "16300", ["AREA"] = "" }),
+            "user");
+
+        Assert.Equal(AuditOutcome.Success, result.Outcome);
+        Assert.Equal("16300", _awacs.Stations["DB-QE1-001S"]["SPEED_SPEC"]);
+        Assert.False(_awacs.Stations["DB-QE1-001S"].ContainsKey("AREA"));
+        Assert.Equal(AuditAction.EquipmentAdd, Assert.Single(_audit.Entries).Action);
+    }
+
+    [Fact]
+    public async Task Refuses_to_create_a_workstation_that_already_exists()
+    {
+        var result = await CreateService().CreateAsync(new EquipmentCreateRequest(1, WsId, new Dictionary<string, string>()), "user");
+
+        Assert.Equal(AuditOutcome.Rejected, result.Outcome);
+        Assert.Contains("already exists", result.Message);
+        Assert.Equal(0, _awacs.UpdateCalls);
+    }
+
+    [Fact]
+    public async Task Explains_the_login_when_AWACS_does_not_create_the_workstation()
+    {
+        _awacs.CannotCreate = true;
+        _rules.KnownAttributes = ["COMPUTER"];
+
+        var result = await CreateService().CreateAsync(
+            new EquipmentCreateRequest(1, "DB-NEW-001", new Dictionary<string, string> { ["COMPUTER"] = "x" }), "user");
+
+        Assert.Equal(AuditOutcome.Failed, result.Outcome);
+        Assert.Contains("logged-in", result.Message);
+    }
+
+    [Fact]
     public async Task Reports_a_lost_audit_row_without_hiding_the_change()
     {
         _audit.FailWrites = true;

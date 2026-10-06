@@ -52,10 +52,9 @@ public sealed class FakeAwacsClient : IAwacsClient
         IReadOnlyDictionary<string, string> changes,
         CancellationToken cancellationToken = default)
     {
-        if (!StationsFor(server).TryGetValue(wsId, out var attributes))
-        {
-            return Task.FromResult(new AwacsUpdateResult(false, $"Unknown workstation {wsId}"));
-        }
+        // Like AWACS (when logged in): setwsattr for an unknown WSID creates the workstation.
+        var attributes = StationsFor(server).GetOrAdd(wsId,
+            id => new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["WSID"] = id });
 
         lock (attributes)
         {

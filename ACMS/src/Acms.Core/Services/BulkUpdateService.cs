@@ -10,6 +10,9 @@ public enum BulkRowStatus
     /// <summary>Found on exactly one server and the value differs: will be changed.</summary>
     Change,
 
+    /// <summary>Not found anywhere: will be added on the chosen server.</summary>
+    Create,
+
     /// <summary>Already has the requested value.</summary>
     NoChange,
 
@@ -64,11 +67,13 @@ public sealed record BulkPreview(
 
 /// <param name="NewValues">Attributes to set.</param>
 /// <param name="ExpectedCurrent">Values shown in the preview. A value AWACS has changed since is refused.</param>
+/// <param name="Create">True to add the workstation instead of changing it.</param>
 public sealed record BulkApplyItem(
     int ServerId,
     string WsId,
     IReadOnlyDictionary<string, string> NewValues,
-    IReadOnlyDictionary<string, string> ExpectedCurrent);
+    IReadOnlyDictionary<string, string> ExpectedCurrent,
+    bool Create = false);
 
 public sealed record BulkApplyResult(BulkApplyItem Item, string? ServerName, EquipmentChangeResult Result);
 
@@ -103,9 +108,13 @@ public sealed class BulkUpdateService
     }
 
     /// <summary>Checks the list and reads the current values. Nothing is changed on AWACS.</summary>
+    /// <param name="createOnServerId">
+    /// Server on which machines that are not found anywhere are added; null reports them as not found.
+    /// </param>
     public async Task<BulkPreview> PreviewAsync(
         IReadOnlyList<BulkInputRow> lines,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        int? createOnServerId = null)
     {
         var attributes = lines
             .SelectMany(l => l.Values.Keys)
@@ -178,11 +187,13 @@ public sealed class BulkUpdateService
 
         // 2. Find the machines on every active server (one wsdata.xml?ws=A,B,C read per server).
         var serverErrors = new List<string>();
+        AwacsServer? createServer = null;
         var found = new Dictionary<string, List<(AwacsServer Server, Workstation Workstation)>>(StringComparer.OrdinalIgnoreCase);
 
         if (lookup.Count > 0)
         {
             var servers = await _servers.GetAllAsync(includeInactive: false, cancellationToken);
+            createServer = servers.FirstOrDefault(s => s.Id == createOnServerId);
             var reads = await Task.WhenAll(servers.Select(server => ReadAsync(server, lookup, cancellationToken)));
 
             foreach (var (server, workstations, error) in reads)
@@ -218,6 +229,18 @@ public sealed class BulkUpdateService
 
             if (!found.TryGetValue(line.WsId, out var matches))
             {
+                var notKnown = values.Keys.Where(name => !_rules.IsSettable(name, new Workstation(line.WsId))).ToList();
+                if (createServer is not null && serverErrors.Count == 0 && notKnown.Count == 0)
+                {
+                    rows[i] = new BulkPreviewRow(line.RowNumber, line.WsId, BulkRowStatus.Create, "New machine.")
+                    {
+                        ServerId = createServer.Id,
+                        ServerName = createServer.Name,
+                        Values = values.Select(v => new BulkValueChange(v.Key, null, v.Value, true)).ToList(),
+                    };
+                    continue;
+                }
+
                 rows[i] = serverErrors.Count > 0
                     ? Row(line, values, BulkRowStatus.Unknown, "Not found on the servers that answered; some servers could not be read.")
                     : Row(line, values, BulkRowStatus.NotFound, "Not found on any active AWACS server.");
@@ -276,8 +299,9 @@ public sealed class BulkUpdateService
 
         foreach (var item in items)
         {
-            var request = new EquipmentEditRequest(item.ServerId, item.WsId, item.NewValues, item.ExpectedCurrent);
-            var result = await _changes.EditAsync(request, userName, cancellationToken);
+            var result = item.Create
+                ? await _changes.CreateAsync(new EquipmentCreateRequest(item.ServerId, item.WsId, item.NewValues), userName, cancellationToken)
+                : await _changes.EditAsync(new EquipmentEditRequest(item.ServerId, item.WsId, item.NewValues, item.ExpectedCurrent), userName, cancellationToken);
             results.Add(new BulkApplyResult(item, serverNames.GetValueOrDefault(item.ServerId), result));
         }
 

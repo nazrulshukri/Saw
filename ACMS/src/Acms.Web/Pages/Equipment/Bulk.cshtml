@@ -9,6 +9,7 @@
     static string StatusClass(BulkRowStatus status) => status switch
     {
         BulkRowStatus.Change => "bg-primary",
+        BulkRowStatus.Create => "bg-success",
         BulkRowStatus.NoChange => "bg-secondary",
         BulkRowStatus.NoValue => "bg-light text-dark",
         BulkRowStatus.Duplicate => "bg-light text-dark",
@@ -21,6 +22,7 @@
     static string StatusText(BulkRowStatus status) => status switch
     {
         BulkRowStatus.Change => "Will change",
+        BulkRowStatus.Create => "Will add",
         BulkRowStatus.NoChange => "Already set",
         BulkRowStatus.NoValue => "Skipped",
         BulkRowStatus.NotFound => "Not found",
@@ -123,6 +125,18 @@
                     <option value="@name"></option>
                 }
             </datalist>
+            <div class="row g-2 align-items-center mt-3">
+                <div class="col-auto"><label for="CreateOnServerId" class="form-label mb-0 fw-semibold">Machines not found on any server:</label></div>
+                <div class="col-auto">
+                    <select id="CreateOnServerId" name="CreateOnServerId" class="form-select form-select-sm">
+                        <option value="">Report as "Not found" (do not add)</option>
+                        @foreach (var s in Model.Servers)
+                        {
+                            <option value="@s.Id" selected="@(Model.CreateOnServerId == s.Id)">Add them as new machines on @s.Name</option>
+                        }
+                    </select>
+                </div>
+            </div>
         </div>
         <div class="card-footer bg-white">
             <button type="submit" asp-page-handler="Preview" class="btn btn-outline-primary">Preview with these columns</button>
@@ -149,12 +163,13 @@
             <div class="alert alert-warning py-2">@error</div>
         }
 
-        var changes = preview.Count(BulkRowStatus.Change);
+        var changes = preview.Count(BulkRowStatus.Change) + preview.Count(BulkRowStatus.Create);
         var skipped = preview.Count(BulkRowStatus.NoValue) + preview.Count(BulkRowStatus.Duplicate);
         var problems = preview.Rows.Count - changes - preview.Count(BulkRowStatus.NoChange) - skipped;
 
         <form method="post" class="card" id="applyForm">
             <input type="hidden" asp-for="TableJson" />
+            <input type="hidden" asp-for="CreateOnServerId" />
             @for (var c = 0; c < Model.Mapping.Count; c++)
             {
                 <input type="hidden" name="Mapping[@c]" value="@Model.Mapping[c]" />
@@ -162,7 +177,11 @@
 
             <div class="card-header bg-white d-flex flex-wrap gap-2 align-items-center">
                 <span class="fw-semibold me-1">3. Preview</span>
-                <span class="badge bg-primary">@changes to change</span>
+                <span class="badge bg-primary">@preview.Count(BulkRowStatus.Change) to change</span>
+                @if (preview.Count(BulkRowStatus.Create) > 0)
+                {
+                    <span class="badge bg-success">@preview.Count(BulkRowStatus.Create) to add</span>
+                }
                 <span class="badge bg-secondary">@preview.Count(BulkRowStatus.NoChange) already set</span>
                 <span class="badge bg-light text-dark">@skipped skipped</span>
                 @if (problems > 0)
@@ -180,13 +199,14 @@
                     @{ var k = 0; }
                     @foreach (var row in preview.Rows)
                     {
-                        var isChange = row.Status == BulkRowStatus.Change;
+                        var isChange = row.Status is BulkRowStatus.Change or BulkRowStatus.Create;
                         <tr class="@(isChange ? "" : "text-muted")">
                             <td class="text-center">
                                 @if (isChange)
                                 {
                                     <input type="checkbox" class="form-check-input" asp-for="Items[k].Selected" aria-label="Apply @row.WsId" />
                                     <input type="hidden" asp-for="Items[k].ServerId" />
+                                    <input type="hidden" asp-for="Items[k].Create" />
                                     <input type="hidden" asp-for="Items[k].WsId" />
                                     @for (var v = 0; v < Model.Items[k].Values.Count; v++)
                                     {

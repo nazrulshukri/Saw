@@ -18,6 +18,9 @@ public sealed record EquipmentEditRequest(
     IReadOnlyDictionary<string, string> Values,
     IReadOnlyDictionary<string, string>? ExpectedOriginal = null);
 
+/// <summary>A request to add a workstation that does not exist yet on an AWACS server.</summary>
+public sealed record EquipmentCreateRequest(int ServerId, string WsId, IReadOnlyDictionary<string, string> Values);
+
 public sealed class EquipmentChangeResult
 {
     public required AuditOutcome Outcome { get; init; }
@@ -228,6 +231,138 @@ public sealed class EquipmentChangeService
             CorrelationId = correlationId,
             Changes = changes,
             Before = beforeValues,
+            After = afterValues,
+            Mismatches = mismatches,
+        }, CancellationToken.None);
+    }
+
+    /// <summary>
+    /// Adds a workstation: validate, make sure it does not exist yet, send setwsattr with the new WsId
+    /// (AWACS creates the workstation for a logged-in session), re-read, verify and audit.
+    /// </summary>
+    public async Task<EquipmentChangeResult> CreateAsync(
+        EquipmentCreateRequest request,
+        string userName,
+        CancellationToken cancellationToken = default)
+    {
+        var correlationId = Guid.NewGuid().ToString("N");
+        var values = request.Values
+            .Where(v => !string.IsNullOrWhiteSpace(v.Value))
+            .ToDictionary(v => v.Key, v => v.Value, StringComparer.OrdinalIgnoreCase);
+
+        var audit = new AuditEntry
+        {
+            Action = AuditAction.EquipmentAdd,
+            UserName = userName,
+            ServerId = request.ServerId,
+            WsId = request.WsId,
+            RequestedJson = ToJson(values),
+            CorrelationId = correlationId,
+        };
+
+        var errors = new List<string>();
+        if (!EditRules.IsValidIdentifier(request.WsId))
+        {
+            errors.Add("WSID is missing or contains invalid characters.");
+        }
+
+        var empty = new Workstation(request.WsId);
+        foreach (var (name, value) in values)
+        {
+            errors.AddRange(_rules.Validate(name, value));
+            if (!_rules.IsSettable(name, empty))
+            {
+                errors.Add($"Attribute '{name}' is not a known AWACS attribute.");
+            }
+        }
+
+        if (errors.Count > 0)
+        {
+            return await RejectAsync(audit, string.Join(" ", errors.Distinct()), cancellationToken);
+        }
+
+        var server = await _servers.GetAsync(request.ServerId, cancellationToken);
+        if (server is null || !server.IsActive)
+        {
+            return await RejectAsync(audit, $"AWACS server {request.ServerId} does not exist or is inactive.", cancellationToken);
+        }
+
+        audit.ServerName = server.Name;
+
+        try
+        {
+            if (await _awacs.GetWorkstationAsync(server, request.WsId, cancellationToken) is not null)
+            {
+                return await RejectAsync(audit,
+                    $"Workstation '{request.WsId}' already exists on '{server.Name}'. Edit it instead.", cancellationToken);
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            return await CompleteAsync(audit, new EquipmentChangeResult
+            {
+                Outcome = AuditOutcome.Failed,
+                Message = $"Could not read from '{server.Name}': {ex.Message}",
+                CorrelationId = correlationId,
+            }, CancellationToken.None);
+        }
+
+        AwacsUpdateResult update;
+        try
+        {
+            update = await _awacs.UpdateAttributesAsync(server, request.WsId, values, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "AWACS create call failed");
+            update = new AwacsUpdateResult(false, ex.Message);
+        }
+
+        Workstation? after = null;
+        string? rereadError = null;
+        try
+        {
+            after = await _awacs.GetWorkstationAsync(server, request.WsId, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            rereadError = ex.Message;
+        }
+
+        var afterValues = after is null
+            ? new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+            : AttributeDiff.Select(after.Attributes, values.Keys);
+        if (after is not null)
+        {
+            audit.AfterJson = ToJson(afterValues);
+        }
+
+        var mismatches = after is null ? [] : AttributeDiff.Verify(after.Attributes, values);
+        var succeeded = update.Accepted && after is not null && mismatches.Count == 0;
+
+        string message;
+        if (succeeded)
+        {
+            message = $"Workstation '{request.WsId}' added on '{server.Name}' and verified.";
+        }
+        else if (after is null && rereadError is null)
+        {
+            message = $"AWACS did not create '{request.WsId}'. AWACS only adds workstations for a logged-in user: "
+                + "check Awacs:Username and Awacs:Password."
+                + (update.Accepted ? string.Empty : $" {update.Detail}");
+        }
+        else
+        {
+            message = BuildFailureMessage(update, rereadError, mismatches);
+        }
+
+        return await CompleteAsync(audit, new EquipmentChangeResult
+        {
+            Outcome = succeeded ? AuditOutcome.Success : AuditOutcome.Failed,
+            Message = message,
+            CorrelationId = correlationId,
+            Changes = values,
+            Before = values.ToDictionary(v => v.Key, _ => (string?)null, StringComparer.OrdinalIgnoreCase),
             After = afterValues,
             Mismatches = mismatches,
         }, CancellationToken.None);

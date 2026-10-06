@@ -127,6 +127,24 @@ public class BulkUpdateServiceTests
     }
 
     [Fact]
+    public async Task Adds_machines_that_are_not_found_when_a_server_is_chosen()
+    {
+        var service = CreateService();
+        var preview = await service.PreviewAsync(Lines(("DB-NEW-001", "28000"), ("DB-AXF-012S", "28000")), default, createOnServerId: 2);
+
+        Assert.Equal([BulkRowStatus.Create, BulkRowStatus.Change], preview.Rows.Select(r => r.Status));
+        Assert.Equal("MS080", preview.Rows[0].ServerName);
+
+        var row = preview.Rows[0];
+        var result = Assert.Single(await service.ApplyAsync(
+            [new BulkApplyItem(row.ServerId!.Value, row.WsId, new Dictionary<string, string> { ["SPEED_SPEC"] = "28000" }, new Dictionary<string, string>(), Create: true)],
+            "user"));
+
+        Assert.Equal(AuditOutcome.Success, result.Result.Outcome);
+        Assert.Equal("28000", _awacs.For(2)["DB-NEW-001"]["SPEED_SPEC"]);
+    }
+
+    [Fact]
     public async Task Preview_rejects_lists_that_are_too_long()
     {
         var lines = Enumerable.Range(1, BulkUpdateService.MaxLines + 1).Select(i => ($"WS-{i}", (string?)"1")).ToArray();

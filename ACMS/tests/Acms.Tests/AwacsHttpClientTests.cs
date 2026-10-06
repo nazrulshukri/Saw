@@ -108,6 +108,36 @@ public class AwacsHttpClientTests
     }
 
     [Fact]
+    public async Task Logs_in_before_updating_when_a_user_is_configured()
+    {
+        _options.Username = "admin";
+        _options.Password = "p&ss";
+        _handler.Enqueue(HttpStatusCode.OK, "<a href=\"/template/general/home.html?UsrId=1\">Logout<br />admin</a>");
+
+        var result = await CreateClient().UpdateAttributesAsync(_server, "A", new Dictionary<string, string> { ["X"] = "1" });
+
+        Assert.True(result.Accepted);
+        Assert.Equal("/template/general/home.html", _handler.Requests[0].AbsolutePath);
+        var login = System.Web.HttpUtility.ParseQueryString(_handler.Requests[0].Query);
+        Assert.Equal("admin", login["Awacs_Username"]);
+        Assert.Equal("p&ss", login["Awacs_password"]);
+        Assert.Equal("/template/wswoupdate.html", _handler.Requests[1].AbsolutePath);
+    }
+
+    [Fact]
+    public async Task Does_not_update_when_the_login_fails()
+    {
+        _options.Username = "admin";
+        _handler.Enqueue(HttpStatusCode.OK, "<input type=\"password\" name=\"Awacs_password\"/>");
+
+        var result = await CreateClient().UpdateAttributesAsync(_server, "A", new Dictionary<string, string> { ["X"] = "1" });
+
+        Assert.False(result.Accepted);
+        Assert.Contains("log in", result.Detail);
+        Assert.Single(_handler.Requests);
+    }
+
+    [Fact]
     public async Task Can_use_the_colon_format()
     {
         _options.UpdateAttributeFormat = AwacsAttributeFormat.Colon;

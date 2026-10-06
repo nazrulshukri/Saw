@@ -54,7 +54,10 @@ public static class DependencyInjection
                 .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
                 {
                     UseDefaultCredentials = awacs.UseDefaultCredentials,
-                });
+                    UseCookies = true,
+                })
+                // The AWACS login is a GET with the password in the query string: never log request URLs.
+                .RemoveAllLoggers();
         }
 
         services.AddSingleton(TimeProvider.System);

@@ -65,6 +65,9 @@ internal sealed class ScriptedAwacsClient : IAwacsClient
 
     public int UpdateCalls { get; private set; }
 
+    /// <summary>Like AWACS without a login: setwsattr for an unknown WSID is ignored.</summary>
+    public bool CannotCreate { get; set; }
+
     public Dictionary<string, Dictionary<string, string>> For(int serverId)
     {
         if (!_servers.TryGetValue(serverId, out var stations))
@@ -119,7 +122,16 @@ internal sealed class ScriptedAwacsClient : IAwacsClient
 
         if (!IgnoreUpdates)
         {
-            var attributes = For(server.Id)[wsId];
+            if (!For(server.Id).TryGetValue(wsId, out var attributes))
+            {
+                if (CannotCreate)
+                {
+                    return Task.FromResult(new AwacsUpdateResult(true, null));
+                }
+
+                For(server.Id)[wsId] = attributes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["WSID"] = wsId };
+            }
+
             foreach (var (name, value) in changes)
             {
                 // AWACS leaves empty attributes out of wsdata.xml.

@@ -137,6 +137,7 @@ All settings are in `src/Acms.Web/appsettings.json`. On the server, override the
 | `Awacs:UpdatePath` | Update interface, default `template/wswoupdate.html` |
 | `Awacs:UpdateAttributeFormat` | `Quoted` (default, `attr="value"`, values may contain commas) or `Colon` (`attr:value`) |
 | `Awacs:MaxIdsPerRequest` | Longest `ws=A,B,C` list in one read (default 50); longer lists are split |
+| `Awacs:Username` / `Awacs:Password` | AWACS login used before every change or add. **AWACS ignores changes from sessions that are not logged in.** Keep the password out of source control (user secrets or environment variable `Awacs__Password`) |
 | `Awacs:UpdateFailureMarkers` | Text that marks an update response as failed even with HTTP 200 |
 | `Awacs:WorkstationElementNames` / `WorkstationIdNames` | How to find workstations and their id in `wsdata.xml` |
 | `Awacs:UseDefaultCredentials` | Call AWACS as the app pool account (Windows auth) |
@@ -188,9 +189,21 @@ configuration only and no code changes:
 - [ ] **AWACS servers.** Add every server (for example `http://myser01ms079.nws.nexperia.com/`) under
       **Servers**. The bulk update searches all active servers.
 
+## Adding machines
+
+Tested on the MS073 test server: `wswoupdate.html?ws=NEW&setwsattr=WsId="NEW",...` **creates** the
+workstation when the session is logged in (and does nothing when it is not). ACMS uses this for:
+
+- **Equipment → Add equipment**: a form like *Edit workstation* in AWACS (server, WsID and the known
+  attributes). ACMS refuses a WsID that already exists, adds it, re-reads and audits it (`EquipmentAdd`).
+- **Import updates**: choose *Add them as new machines on &lt;server&gt;* under the columns to add every
+  machine of the list that no server knows (status *Will add*).
+
+AWACS warns *Missing "computer" attribute* for a workstation without `COMPUTER`; fill it in.
+
 ## Not implemented on purpose
 
-- **Add / delete machines.** The ITEC document has no URL to create or delete a workstation and
+- **Delete machines.** The ITEC document has no URL to delete a workstation and
   says "If more functionality is needed please ask ITEC". The AWACS edit page has a *Delete* button,
   but how it works is not documented, so ACMS does not copy it. The buttons are visible but
   disabled; an imported machine that does not exist is reported as *Not found*. When ITEC

@@ -37,7 +37,7 @@ public sealed class BulkUpdateController : ControllerBase
                 (row.Values ?? []).ToDictionary(v => v.Key.Trim(), v => ImportText.NormalizeValue(v.Value), StringComparer.OrdinalIgnoreCase)))
             .ToList();
 
-        var preview = await _bulk.PreviewAsync(rows, cancellationToken);
+        var preview = await _bulk.PreviewAsync(rows, cancellationToken, body.CreateOnServerId);
         if (!preview.IsValid)
         {
             return BadRequest(new BulkUpdateResponse(preview, null));
@@ -49,12 +49,13 @@ public sealed class BulkUpdateController : ControllerBase
         }
 
         var items = preview.Rows
-            .Where(r => r.Status == BulkRowStatus.Change)
+            .Where(r => r.Status is BulkRowStatus.Change or BulkRowStatus.Create)
             .Select(r => new BulkApplyItem(
                 r.ServerId!.Value,
                 r.WsId,
                 r.Values.Where(v => v.Changed).ToDictionary(v => v.Attribute, v => v.New, StringComparer.OrdinalIgnoreCase),
-                r.Values.Where(v => v.Changed).ToDictionary(v => v.Attribute, v => v.Current ?? string.Empty, StringComparer.OrdinalIgnoreCase)))
+                r.Values.Where(v => v.Changed).ToDictionary(v => v.Attribute, v => v.Current ?? string.Empty, StringComparer.OrdinalIgnoreCase),
+                r.Status == BulkRowStatus.Create))
             .ToList();
 
         var results = await _bulk.ApplyAsync(items, User.AcmsUserName(), cancellationToken);
@@ -66,6 +67,9 @@ public sealed class BulkUpdateRequest
 {
     /// <summary>One entry per machine: <c>{ "wsId": "DB-AXF-012S", "values": { "SPEED_SPEC": "28000" } }</c>.</summary>
     public List<BulkRowRequest>? Rows { get; init; }
+
+    /// <summary>Server id on which machines that are not found are added; omit to only report them.</summary>
+    public int? CreateOnServerId { get; init; }
 
     /// <summary>True (the default) only previews; false applies the changes.</summary>
     public bool DryRun { get; init; } = true;

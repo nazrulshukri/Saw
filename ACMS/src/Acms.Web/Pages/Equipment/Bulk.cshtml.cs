@@ -1,4 +1,6 @@
 using System.Text.Json;
+using Acms.Core.Abstractions;
+using Acms.Core.Domain;
 using Acms.Core.Import;
 using Acms.Core.Services;
 using Acms.Infrastructure.Import;
@@ -17,10 +19,12 @@ public class BulkModel : PageModel
 {
     private readonly BulkUpdateService _bulk;
     private readonly ImportOptions _import;
+    private readonly IServerRepository _servers;
 
-    public BulkModel(BulkUpdateService bulk, IOptions<EquipmentRulesOptions> rules, IOptions<ImportOptions> import)
+    public BulkModel(BulkUpdateService bulk, IOptions<EquipmentRulesOptions> rules, IOptions<ImportOptions> import, IServerRepository servers)
     {
         _bulk = bulk;
+        _servers = servers;
         _import = import.Value;
         KnownAttributes = rules.Value.KnownAttributes;
     }
@@ -38,6 +42,12 @@ public class BulkModel : PageModel
     /// <summary>Target per column: WSID, an attribute name, or empty (ignored).</summary>
     [BindProperty]
     public List<string?> Mapping { get; set; } = [];
+
+    /// <summary>Server on which machines that are not found are added; null = report them as not found.</summary>
+    [BindProperty]
+    public int? CreateOnServerId { get; set; }
+
+    public IReadOnlyList<AwacsServer> Servers { get; private set; } = [];
 
     /// <summary>The machines to change, carried from the preview to the apply step.</summary>
     [BindProperty]
@@ -126,7 +136,8 @@ public class BulkModel : PageModel
                 i.ServerId,
                 i.WsId,
                 i.Values.ToDictionary(v => v.Attribute, v => v.New ?? string.Empty, StringComparer.OrdinalIgnoreCase),
-                i.Values.ToDictionary(v => v.Attribute, v => v.Current ?? string.Empty, StringComparer.OrdinalIgnoreCase)))
+                i.Values.ToDictionary(v => v.Attribute, v => v.Current ?? string.Empty, StringComparer.OrdinalIgnoreCase),
+                i.Create))
             .ToList();
 
         if (items.Count == 0)
@@ -163,6 +174,8 @@ public class BulkModel : PageModel
 
     private async Task BuildPreviewAsync(CancellationToken cancellationToken)
     {
+        Servers = await _servers.GetAllAsync(includeInactive: false, cancellationToken);
+
         var (rows, errors) = ColumnMapper.ToRows(Table!, Mapping);
         if (errors.Count > 0)
         {
@@ -170,12 +183,13 @@ public class BulkModel : PageModel
             return;
         }
 
-        Preview = await _bulk.PreviewAsync(rows, cancellationToken);
+        Preview = await _bulk.PreviewAsync(rows, cancellationToken, CreateOnServerId);
         Items = Preview.Rows
-            .Where(r => r.Status == BulkRowStatus.Change)
+            .Where(r => r.Status is BulkRowStatus.Change or BulkRowStatus.Create)
             .Select(r => new BulkItemInput
             {
                 Selected = true,
+                Create = r.Status == BulkRowStatus.Create,
                 ServerId = r.ServerId!.Value,
                 WsId = r.WsId,
                 Values = r.Values
@@ -189,6 +203,7 @@ public class BulkModel : PageModel
     public sealed class BulkItemInput
     {
         public bool Selected { get; set; }
+        public bool Create { get; set; }
         public int ServerId { get; set; }
         public string WsId { get; set; } = string.Empty;
         public List<BulkValueInput> Values { get; set; } = [];

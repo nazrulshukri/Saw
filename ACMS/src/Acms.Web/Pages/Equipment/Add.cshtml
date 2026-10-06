@@ -1,0 +1,55 @@
+@page
+@model Acms.Web.Pages.Equipment.AddModel
+@{
+    ViewData["Title"] = "Add equipment";
+}
+
+<h1 class="h3 mb-1">Add equipment</h1>
+<p class="text-muted mb-3">
+    Creates a new workstation on an AWACS server, like "Edit workstation" in AWACS. Fill in at least
+    <span class="mono">COMPUTER</span>; empty fields are not sent. ACMS checks the machine does not exist yet,
+    adds it, re-reads it and records it in the audit trail.
+</p>
+
+@if (Model.Result is { } r)
+{
+    <div class="alert alert-warning">
+        <partial name="_OutcomeBadge" model="r.Outcome" /> @r.Message
+    </div>
+}
+
+<form method="post" class="card">
+    <div class="card-body">
+        <div class="row g-3 mb-3">
+            <div class="col-md-4">
+                <label class="form-label fw-semibold" for="ServerId">AWACS server</label>
+                <select asp-for="ServerId" class="form-select">
+                    @foreach (var s in Model.Servers)
+                    {
+                        <option value="@s.Id">@s.Name</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label fw-semibold" asp-for="WsId">WsID</label>
+                <input asp-for="WsId" class="form-control mono" required placeholder="DB-QE1-001S" />
+            </div>
+        </div>
+        <table class="table table-sm align-middle mb-0">
+            <thead><tr><th class="w-25">Attribute</th><th>Value</th></tr></thead>
+            <tbody>
+            @for (var i = 0; i < Model.Attributes.Count; i++)
+            {
+                <tr>
+                    <td class="mono">@Model.Attributes[i].Name<input type="hidden" asp-for="Attributes[i].Name" /></td>
+                    <td><input asp-for="Attributes[i].Value" class="form-control form-control-sm mono" /></td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
+    <div class="card-footer bg-white d-flex gap-2">
+        <button type="submit" class="btn btn-primary">Add and verify</button>
+        <a class="btn btn-outline-secondary" asp-page="Index">Cancel</a>
+    </div>
+</form>
