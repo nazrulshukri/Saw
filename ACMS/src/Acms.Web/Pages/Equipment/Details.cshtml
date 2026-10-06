@@ -1,0 +1,83 @@
+@page
+@model Acms.Web.Pages.Equipment.DetailsModel
+@{
+    ViewData["Title"] = Model.WsId;
+    var canEdit = (await AuthorizationService.AuthorizeAsync(User, AcmsPolicies.CanEditEquipment)).Succeeded;
+}
+
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a asp-page="Index">Equipment</a></li>
+        <li class="breadcrumb-item"><a asp-page="Index" asp-route-serverId="@Model.ServerId">@Model.Server?.Name</a></li>
+        <li class="breadcrumb-item active" aria-current="page">@Model.WsId</li>
+    </ol>
+</nav>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h1 class="h3 mb-0"><span class="mono">@Model.WsId</span> <span class="text-muted fs-6">on @Model.Server?.Name</span></h1>
+    <div>
+        @if (canEdit && Model.Workstation is not null && Model.Server?.IsActive == true)
+        {
+            <a class="btn btn-primary" asp-page="Edit" asp-route-serverId="@Model.ServerId" asp-route-wsId="@Model.WsId">Edit</a>
+            <button type="button" class="btn btn-outline-danger" disabled
+                    title="Waiting for ITEC to confirm an AWACS delete-workstation interface (Phase 4)">Delete</button>
+        }
+    </div>
+</div>
+
+@if (Model.Error is not null)
+{
+    <div class="alert alert-warning">@Model.Error</div>
+}
+
+<div class="row g-4">
+    <div class="col-lg-6">
+        @if (Model.Workstation is not null)
+        {
+            <div class="card">
+                <div class="card-header bg-white fw-semibold">Current values on @Model.Server!.Name</div>
+                <table class="table table-sm mb-0">
+                    <tbody>
+                    @foreach (var (name, value) in Model.Workstation.Attributes.OrderBy(a => a.Key, StringComparer.OrdinalIgnoreCase))
+                    {
+                        <tr><th class="mono fw-normal text-muted w-50">@name</th><td class="mono">@value</td></tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+
+    <div class="col-lg-6">
+        <div class="card">
+            <div class="card-header bg-white fw-semibold d-flex justify-content-between">
+                <span>Change history</span>
+                <a class="small" asp-page="/Audit/Index" asp-route-serverId="@Model.ServerId" asp-route-wsId="@Model.WsId">Open in audit trail</a>
+            </div>
+            <ul class="list-group list-group-flush">
+                @if (Model.History.Count == 0)
+                {
+                    <li class="list-group-item text-muted">No changes recorded through ACMS.</li>
+                }
+                @foreach (var a in Model.History)
+                {
+                    <li class="list-group-item">
+                        <div class="d-flex justify-content-between">
+                            <span><partial name="_OutcomeBadge" model="a.Outcome" /> @a.UserName</span>
+                            <span class="text-muted small">@a.TimestampUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</span>
+                        </div>
+                        <div class="small">@a.Message</div>
+                        @if (a.BeforeJson is not null)
+                        {
+                            <div class="small text-muted mono">before @a.BeforeJson</div>
+                        }
+                        @if (a.AfterJson is not null)
+                        {
+                            <div class="small text-muted mono">after&nbsp; @a.AfterJson</div>
+                        }
+                    </li>
+                }
+            </ul>
+        </div>
+    </div>
+</div>

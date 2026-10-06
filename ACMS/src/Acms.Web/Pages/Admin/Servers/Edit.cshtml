@@ -1,0 +1,54 @@
+@page "{id:int?}"
+@model Acms.Web.Pages.Admin.Servers.EditModel
+@{
+    ViewData["Title"] = Model.IsNew ? "Add AWACS server" : "Edit AWACS server";
+}
+
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a asp-page="Index">AWACS servers</a></li>
+        <li class="breadcrumb-item active" aria-current="page">@(Model.IsNew ? "Add" : Model.Input.Name)</li>
+    </ol>
+</nav>
+
+<h1 class="h3 mb-3">@ViewData["Title"]</h1>
+
+<div class="row">
+    <div class="col-lg-7">
+        <form method="post" class="card">
+            <div class="card-body">
+                <div asp-validation-summary="All" class="text-danger small"></div>
+
+                <div class="mb-3">
+                    <label asp-for="Input.Name" class="form-label"></label>
+                    <input asp-for="Input.Name" class="form-control" placeholder="AWACS ATSN Line 1" />
+                    <span asp-validation-for="Input.Name" class="text-danger small"></span>
+                </div>
+                <div class="mb-3">
+                    <label asp-for="Input.BaseUrl" class="form-label"></label>
+                    <input asp-for="Input.BaseUrl" class="form-control mono" placeholder="http://awacs01.company.local/" />
+                    <div class="form-text">Root of the AWACS site. ACMS calls template/wsdata.xml and template/wswoupdate.html under it.</div>
+                    <span asp-validation-for="Input.BaseUrl" class="text-danger small"></span>
+                </div>
+                <div class="mb-3">
+                    <label asp-for="Input.Description" class="form-label"></label>
+                    <textarea asp-for="Input.Description" class="form-control" rows="2"></textarea>
+                </div>
+
+                @if (Model.TestResult is not null)
+                {
+                    <div class="alert @(Model.TestSucceeded ? "alert-success" : "alert-warning") py-2">@Model.TestResult</div>
+                }
+            </div>
+            <div class="card-footer bg-white d-flex gap-2">
+                <button type="submit" class="btn btn-primary">Save</button>
+                <button type="submit" asp-page-handler="Test" class="btn btn-outline-secondary" formnovalidate>Test connection</button>
+                <a asp-page="Index" class="btn btn-link">Cancel</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

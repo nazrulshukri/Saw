@@ -1,0 +1,120 @@
+@page
+@model Acms.Web.Pages.Equipment.EditModel
+@{
+    ViewData["Title"] = "Edit " + Model.WsId;
+}
+
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a asp-page="Index">Equipment</a></li>
+        <li class="breadcrumb-item"><a asp-page="Index" asp-route-serverId="@Model.ServerId">@Model.Server?.Name</a></li>
+        <li class="breadcrumb-item"><a asp-page="Details" asp-route-serverId="@Model.ServerId" asp-route-wsId="@Model.WsId">@Model.WsId</a></li>
+        <li class="breadcrumb-item active" aria-current="page">Edit</li>
+    </ol>
+</nav>
+
+<h1 class="h3 mb-3">Edit <span class="mono">@Model.WsId</span> <span class="text-muted fs-6">on @Model.Server?.Name</span></h1>
+
+@if (Model.Result is not null)
+{
+    var r = Model.Result;
+    var alert = r.Outcome switch
+    {
+        AuditOutcome.Success => "alert-success",
+        AuditOutcome.NoChange => "alert-secondary",
+        AuditOutcome.Rejected => "alert-warning",
+        _ => "alert-danger",
+    };
+
+    <div class="alert @alert">
+        <div class="fw-semibold mb-1"><partial name="_OutcomeBadge" model="r.Outcome" /> @r.Message</div>
+        <div class="small text-muted">Reference @r.CorrelationId@(r.AuditWritten ? "" : " - WARNING: the audit record could not be saved, tell the ACMS administrator")</div>
+
+        @if (r.Changes.Count > 0)
+        {
+            <table class="table table-sm table-borderless mb-0 mt-2 small">
+                <thead><tr><th>Attribute</th><th>Before</th><th>Requested</th><th>After (re-read)</th></tr></thead>
+                <tbody>
+                @foreach (var (name, requested) in r.Changes)
+                {
+                    r.Before.TryGetValue(name, out var before);
+                    r.After.TryGetValue(name, out var after);
+                    var ok = r.Mismatches.All(m => !string.Equals(m.Name, name, StringComparison.OrdinalIgnoreCase));
+                    <tr>
+                        <td class="mono">@name</td>
+                        <td class="mono">@before</td>
+                        <td class="mono">@requested</td>
+                        <td class="mono @(ok ? "" : "text-danger fw-semibold")">@(after ?? "-")</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        }
+    </div>
+}
+
+@if (Model.Info is not null)
+{
+    <div class="alert alert-info">@Model.Info</div>
+}
+
+@if (Model.Error is not null)
+{
+    <div class="alert alert-warning">@Model.Error</div>
+}
+else if (Model.Attributes.Count > 0)
+{
+    <form method="post" class="card">
+        <div class="card-body">
+            <p class="text-muted small">
+                Only the values you change are sent to AWACS. ACMS then re-reads the workstation and records the
+                before and after values in the audit trail. If someone changes a value on AWACS after you open this
+                page, your change to that value is refused.
+            </p>
+            <table class="table table-sm align-middle mb-0">
+                <thead><tr><th class="w-25">Attribute</th><th>Value</th></tr></thead>
+                <tbody>
+                @for (var i = 0; i < Model.Attributes.Count; i++)
+                {
+                    var name = Model.Attributes[i].Name;
+                    <tr>
+                        <td class="mono">
+                            @name
+                            <input type="hidden" asp-for="Attributes[i].Name" />
+                            <input type="hidden" asp-for="Attributes[i].Original" />
+                        </td>
+                        <td>
+                            @if (Model.IsReadOnly(name))
+                            {
+                                <input type="hidden" asp-for="Attributes[i].Value" />
+                                <span class="mono">@Model.Attributes[i].Value</span>
+                                <span class="badge bg-light text-dark ms-1">read-only</span>
+                            }
+                            else
+                            {
+                                <input asp-for="Attributes[i].Value" class="form-control form-control-sm mono"
+                                       data-original="@Model.Attributes[i].Original" />
+                            }
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+        <div class="card-footer bg-white d-flex gap-2">
+            <button type="submit" class="btn btn-primary">Apply and verify</button>
+            <a class="btn btn-outline-secondary" asp-page="Details" asp-route-serverId="@Model.ServerId" asp-route-wsId="@Model.WsId">Cancel</a>
+        </div>
+    </form>
+}
+
+@section Scripts {
+    <script>
+        // Highlight edited fields so the user sees exactly what will be sent.
+        document.querySelectorAll('input[data-original]').forEach(function (input) {
+            input.addEventListener('input', function () {
+                input.classList.toggle('value-changed', input.value.trim() !== (input.dataset.original || '').trim());
+            });
+        });
+    </script>
+}

@@ -1,0 +1,11 @@
+@model AuditOutcome
+@{
+    var css = Model switch
+    {
+        AuditOutcome.Success => "bg-success",
+        AuditOutcome.NoChange => "bg-secondary",
+        AuditOutcome.Rejected => "bg-warning text-dark",
+        _ => "bg-danger",
+    };
+}
+<span class="badge @css">@Model</span>

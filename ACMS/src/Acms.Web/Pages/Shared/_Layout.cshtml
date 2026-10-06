@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+@{
+    var isAdmin = User.Identity?.IsAuthenticated == true
+        && (await AuthorizationService.AuthorizeAsync(User, AcmsPolicies.CanAdminister)).Succeeded;
+    var roles = string.Join(", ", User.AcmsRoleNames());
+}
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>@ViewData["Title"] - ACMS</title>
+    <link rel="stylesheet" href="~/lib/bootstrap/dist/css/bootstrap.min.css" />
+    <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/Acms.Web.styles.css" asp-append-version="true" />
+</head>
+<body>
+    <header>
+        <nav class="navbar navbar-expand-md navbar-dark bg-acms mb-4">
+            <div class="container-fluid px-4">
+                <a class="navbar-brand fw-semibold" asp-page="/Index">ACMS <span class="fw-normal small opacity-75">AWACS Central Management</span></a>
+                <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#acmsNav"
+                        aria-controls="acmsNav" aria-expanded="false" aria-label="Toggle navigation">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+                <div class="collapse navbar-collapse" id="acmsNav">
+                    <ul class="navbar-nav me-auto">
+                        <li class="nav-item"><a class="nav-link" asp-page="/Index">Dashboard</a></li>
+                        <li class="nav-item"><a class="nav-link" asp-page="/Equipment/Index">Equipment</a></li>
+                        <li class="nav-item"><a class="nav-link" asp-page="/Audit/Index">Audit trail</a></li>
+                        @if (isAdmin)
+                        {
+                            <li class="nav-item"><a class="nav-link" asp-page="/Admin/Servers/Index">Servers</a></li>
+                        }
+                    </ul>
+                    @if (User.Identity?.IsAuthenticated == true)
+                    {
+                        <span class="navbar-text small">
+                            @User.AcmsUserName()
+                            @if (!string.IsNullOrEmpty(roles))
+                            {
+                                <span class="badge bg-light text-dark ms-1">@roles</span>
+                            }
+                        </span>
+                    }
+                </div>
+            </div>
+        </nav>
+    </header>
+
+    <div class="container-fluid px-4">
+        <main role="main" class="pb-3">
+            @RenderBody()
+        </main>
+    </div>
+
+    <footer class="border-top footer text-muted small">
+        <div class="container-fluid px-4">
+            ACMS &middot; COMPANY INTERNAL
+        </div>
+    </footer>
+
+    <script src="~/lib/jquery/dist/jquery.min.js"></script>
+    <script src="~/lib/bootstrap/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="~/js/site.js" asp-append-version="true"></script>
+
+    @await RenderSectionAsync("Scripts", required: false)
+</body>
+</html>

@@ -1,0 +1,109 @@
+@page
+@model IndexModel
+@{
+    ViewData["Title"] = "Dashboard";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h1 class="h3 mb-0">Dashboard</h1>
+    <a class="btn btn-outline-secondary btn-sm" asp-page="/Index" asp-route-refresh="true">Refresh status</a>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-6 col-lg-3">
+        <div class="card h-100"><div class="card-body">
+            <div class="stat-value">@Model.ServersOnline / @Model.Statuses.Count</div>
+            <div class="text-muted small">AWACS servers online</div>
+        </div></div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card h-100"><div class="card-body">
+            <div class="stat-value">@Model.TotalWorkstations</div>
+            <div class="text-muted small">Workstations on online servers</div>
+        </div></div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card h-100"><div class="card-body">
+            <div class="stat-value">@Model.ChangesToday</div>
+            <div class="text-muted small">Verified changes today</div>
+        </div></div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card h-100"><div class="card-body">
+            <div class="stat-value @(Model.FailuresToday > 0 ? "text-danger" : "")">@Model.FailuresToday</div>
+            <div class="text-muted small">Failed changes today</div>
+        </div></div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <div class="col-xl-7">
+        <div class="card">
+            <div class="card-header bg-white fw-semibold">AWACS servers</div>
+            <div class="table-responsive">
+                <table class="table table-hover mb-0 align-middle">
+                    <thead><tr><th>Server</th><th>Status</th><th class="text-end">Workstations</th><th></th></tr></thead>
+                    <tbody>
+                    @if (Model.Statuses.Count == 0)
+                    {
+                        <tr><td colspan="4" class="text-muted">No active AWACS servers are configured yet.</td></tr>
+                    }
+                    @foreach (var s in Model.Statuses)
+                    {
+                        <tr>
+                            <td>
+                                <div class="fw-semibold">@s.Server.Name</div>
+                                <div class="text-muted small mono">@s.Server.BaseUrl</div>
+                            </td>
+                            <td>
+                                @if (s.Reachable)
+                                {
+                                    <span class="badge bg-success">Online</span>
+                                }
+                                else
+                                {
+                                    <span class="badge bg-danger" title="@s.Error">Unreachable</span>
+                                    <div class="text-muted small">@s.Error</div>
+                                }
+                            </td>
+                            <td class="text-end">@(s.WorkstationCount?.ToString() ?? "-")</td>
+                            <td class="text-end">
+                                <a class="btn btn-sm btn-outline-primary" asp-page="/Equipment/Index" asp-route-serverId="@s.Server.Id">Equipment</a>
+                            </td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-5">
+        <div class="card">
+            <div class="card-header bg-white fw-semibold d-flex justify-content-between">
+                <span>Recent activity</span>
+                <a class="small" asp-page="/Audit/Index">Full audit trail</a>
+            </div>
+            <ul class="list-group list-group-flush">
+                @if (Model.RecentActivity.Count == 0)
+                {
+                    <li class="list-group-item text-muted">No activity recorded yet.</li>
+                }
+                @foreach (var a in Model.RecentActivity)
+                {
+                    <li class="list-group-item">
+                        <div class="d-flex justify-content-between">
+                            <span><partial name="_OutcomeBadge" model="a.Outcome" /> @a.Action</span>
+                            <span class="text-muted small">@a.TimestampUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</span>
+                        </div>
+                        <div class="small">
+                            @a.UserName
+                            @if (a.WsId is not null) { <text>&middot; <span class="mono">@a.WsId</span></text> }
+                            @if (a.ServerName is not null) { <text>&middot; @a.ServerName</text> }
+                        </div>
+                    </li>
+                }
+            </ul>
+        </div>
+    </div>
+</div>

@@ -1,0 +1,115 @@
+@page
+@model Acms.Web.Pages.Audit.IndexModel
+@{
+    ViewData["Title"] = "Audit trail";
+}
+
+<h1 class="h3 mb-3">Audit trail</h1>
+
+<form method="get" class="card card-body mb-3">
+    <div class="row g-2 align-items-end">
+        <div class="col-md-3">
+            <label asp-for="ServerId" class="form-label small">Server</label>
+            <select asp-for="ServerId" class="form-select form-select-sm">
+                <option value="">All</option>
+                @foreach (var s in Model.Servers)
+                {
+                    <option value="@s.Id">@s.Name@(s.IsActive ? "" : " (inactive)")</option>
+                }
+            </select>
+        </div>
+        <div class="col-md-2">
+            <label asp-for="WsId" class="form-label small">WSID contains</label>
+            <input asp-for="WsId" class="form-control form-control-sm" />
+        </div>
+        <div class="col-md-2">
+            <label asp-for="UserName" class="form-label small">User contains</label>
+            <input asp-for="UserName" class="form-control form-control-sm" />
+        </div>
+        <div class="col-md-2">
+            <label asp-for="Action" class="form-label small">Action</label>
+            <select asp-for="Action" asp-items="Html.GetEnumSelectList<AuditAction>()" class="form-select form-select-sm">
+                <option value="">All</option>
+            </select>
+        </div>
+        <div class="col-md-3">
+            <label asp-for="Outcome" class="form-label small">Outcome</label>
+            <select asp-for="Outcome" asp-items="Html.GetEnumSelectList<AuditOutcome>()" class="form-select form-select-sm">
+                <option value="">All</option>
+            </select>
+        </div>
+        <div class="col-md-2">
+            <label asp-for="From" class="form-label small">From</label>
+            <input asp-for="From" type="date" class="form-control form-control-sm" />
+        </div>
+        <div class="col-md-2">
+            <label asp-for="To" class="form-label small">To (inclusive)</label>
+            <input asp-for="To" type="date" class="form-control form-control-sm" />
+        </div>
+        <div class="col-md-2">
+            <button type="submit" class="btn btn-primary btn-sm w-100">Filter</button>
+        </div>
+        <div class="col-md-2">
+            <a asp-page="Index" class="btn btn-outline-secondary btn-sm w-100">Clear</a>
+        </div>
+    </div>
+</form>
+
+<div class="card">
+    <div class="card-header bg-white small text-muted">
+        @Model.Results.TotalCount record(s). Times are server local time.
+    </div>
+    <div class="table-responsive">
+        <table class="table table-sm mb-0 align-top">
+            <thead>
+                <tr><th>When</th><th>User</th><th>Action</th><th>Outcome</th><th>Server</th><th>WSID</th><th>Details</th></tr>
+            </thead>
+            <tbody>
+            @if (Model.Results.Items.Count == 0)
+            {
+                <tr><td colspan="7" class="text-muted">No records match the filter.</td></tr>
+            }
+            @foreach (var a in Model.Results.Items)
+            {
+                <tr>
+                    <td class="text-nowrap">@a.TimestampUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</td>
+                    <td>@a.UserName</td>
+                    <td>@a.Action</td>
+                    <td><partial name="_OutcomeBadge" model="a.Outcome" /></td>
+                    <td>@a.ServerName</td>
+                    <td class="mono">@a.WsId</td>
+                    <td>
+                        <div class="small">@a.Message</div>
+                        @if (a.RequestedJson is not null || a.BeforeJson is not null || a.AfterJson is not null)
+                        {
+                            <details class="small">
+                                <summary>Values</summary>
+                                @if (a.RequestedJson is not null) { <div class="text-muted">Requested</div><pre class="json-block">@a.RequestedJson</pre> }
+                                @if (a.BeforeJson is not null) { <div class="text-muted">Before</div><pre class="json-block">@a.BeforeJson</pre> }
+                                @if (a.AfterJson is not null) { <div class="text-muted">After</div><pre class="json-block">@a.AfterJson</pre> }
+                                <div class="text-muted">Reference @a.CorrelationId</div>
+                            </details>
+                        }
+                    </td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
+    @if (Model.Results.TotalPages > 1)
+    {
+        <div class="card-footer bg-white d-flex justify-content-between align-items-center small">
+            <span>Page @Model.Results.Page of @Model.Results.TotalPages</span>
+            <div class="btn-group">
+                @if (Model.Results.Page > 1)
+                {
+                    <a class="btn btn-sm btn-outline-secondary" asp-page="Index" asp-all-route-data="Model.RouteFor(Model.Results.Page - 1)">Newer</a>
+                }
+                @if (Model.Results.Page < Model.Results.TotalPages)
+                {
+                    <a class="btn btn-sm btn-outline-secondary" asp-page="Index" asp-all-route-data="Model.RouteFor(Model.Results.Page + 1)">Older</a>
+                }
+            </div>
+        </div>
+    }
+</div>

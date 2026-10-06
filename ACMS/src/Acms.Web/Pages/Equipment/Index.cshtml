@@ -1,0 +1,89 @@
+@page
+@model Acms.Web.Pages.Equipment.IndexModel
+@{
+    ViewData["Title"] = "Equipment";
+    var canEdit = (await AuthorizationService.AuthorizeAsync(User, AcmsPolicies.CanEditEquipment)).Succeeded;
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h1 class="h3 mb-0">Equipment</h1>
+    @if (canEdit)
+    {
+        <button type="button" class="btn btn-outline-secondary btn-sm" disabled
+                title="Waiting for ITEC to confirm an AWACS create-workstation interface (Phase 4)">
+            Add equipment
+        </button>
+    }
+</div>
+
+<form method="get" class="card card-body mb-3">
+    <div class="row g-2 align-items-end">
+        <div class="col-md-4">
+            <label asp-for="ServerId" class="form-label small">AWACS server</label>
+            <select asp-for="ServerId" class="form-select">
+                <option value="">All active servers</option>
+                @foreach (var s in Model.Servers)
+                {
+                    <option value="@s.Id">@s.Name</option>
+                }
+            </select>
+        </div>
+        <div class="col-md-5">
+            <label asp-for="Q" class="form-label small">Search</label>
+            <input asp-for="Q" class="form-control" placeholder="WSID or @string.Join(" / ", Model.SummaryAttributes)" />
+        </div>
+        <div class="col-md-3">
+            <button type="submit" class="btn btn-primary w-100">Search</button>
+        </div>
+    </div>
+</form>
+
+@foreach (var error in Model.Errors)
+{
+    <div class="alert alert-warning py-2">Could not load equipment from @error</div>
+}
+
+<div class="card">
+    <div class="card-header bg-white small text-muted">@Model.Rows.Count workstation(s)</div>
+    <div class="table-responsive">
+        <table class="table table-hover table-sm mb-0 align-middle">
+            <thead>
+                <tr>
+                    <th>Server</th>
+                    <th>WSID</th>
+                    @foreach (var a in Model.SummaryAttributes)
+                    {
+                        <th>@a</th>
+                    }
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+            @if (Model.Rows.Count == 0)
+            {
+                <tr><td colspan="@(Model.SummaryAttributes.Count + 3)" class="text-muted">No workstations found.</td></tr>
+            }
+            @foreach (var row in Model.Rows)
+            {
+                <tr>
+                    <td>@row.Server.Name</td>
+                    <td class="mono">@row.Workstation.WsId</td>
+                    @foreach (var a in Model.SummaryAttributes)
+                    {
+                        <td>@row.Workstation.Get(a)</td>
+                    }
+                    <td class="text-end text-nowrap">
+                        <a class="btn btn-sm btn-outline-primary" asp-page="Details"
+                           asp-route-serverId="@row.Server.Id" asp-route-wsId="@row.Workstation.WsId">View</a>
+                        @if (canEdit)
+                        {
+                            <a class="btn btn-sm btn-primary" asp-page="Edit"
+                               asp-route-serverId="@row.Server.Id" asp-route-wsId="@row.Workstation.WsId">Edit</a>
+                        }
+                    </td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
+</div>
