@@ -36,6 +36,14 @@ public class AttributeDiffTests
     }
 
     [Fact]
+    public void Treats_a_missing_attribute_as_empty()
+    {
+        // AWACS leaves empty attributes out of wsdata.xml.
+        Assert.Empty(AttributeDiff.Changes(Current, new Dictionary<string, string> { ["AREA"] = " " }));
+        Assert.Empty(AttributeDiff.Verify(Current, new Dictionary<string, string> { ["AREA"] = "" }));
+    }
+
+    [Fact]
     public void Verify_reports_values_that_were_not_applied()
     {
         var expected = new Dictionary<string, string> { ["RECIPELOAD"] = "RCP_01", ["MISSING"] = "x" };

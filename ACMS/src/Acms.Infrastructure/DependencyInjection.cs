@@ -58,6 +58,7 @@ public static class DependencyInjection
         services.AddSingleton(TimeProvider.System);
         services.AddScoped<EquipmentChangeService>();
         services.AddScoped<ServerAdminService>();
+        services.AddScoped<BulkUpdateService>();
 
         return services;
     }

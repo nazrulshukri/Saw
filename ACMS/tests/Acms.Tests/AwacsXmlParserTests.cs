@@ -32,6 +32,32 @@ public class AwacsXmlParserTests
     }
 
     [Fact]
+    public void Reads_the_documented_wsdata_example()
+    {
+        // From the ITEC document "Urls for manipulating workstations".
+        const string xml = """
+            <?xml version="1.0" ?>
+            <wsdata>
+               <ws>
+                  <WSID>ESEC1</WSID>
+                  <EC_SAMPLE>30,22</EC_SAMPLE>
+                  <EQUIPMENT>Diebond</EQUIPMENT>
+                  <MODEL>DB2007</MODEL>
+                  <SRCFILE>http://kamer:82</SRCFILE>
+                  <VERSION>x64_V2015.11\x64_V2015.11</VERSION>
+               </ws>
+            </wsdata>
+            """;
+
+        var ws = Assert.Single(AwacsXmlParser.Parse(xml, Options, requestedWsId: "esec1"));
+
+        Assert.Equal("ESEC1", ws.WsId);
+        Assert.Equal("30,22", ws.Get("EC_SAMPLE"));
+        Assert.Equal("http://kamer:82", ws.Get("SRCFILE"));
+        Assert.Equal(@"x64_V2015.11\x64_V2015.11", ws.Get("VERSION"));
+    }
+
+    [Fact]
     public void Matches_element_names_case_insensitively_and_reads_WSID_child()
     {
         const string xml = "<WSDATA><WS><WSID>AD45C1</WSID><RECIPELOAD>X</RECIPELOAD></WS></WSDATA>";
@@ -85,6 +111,7 @@ public class AwacsXmlParserTests
     {
         Assert.Empty(AwacsXmlParser.Parse("  ", Options));
         Assert.Empty(AwacsXmlParser.Parse("<wsdata/>", Options));
+        Assert.Empty(AwacsXmlParser.Parse("<?xml version=\"1.0\"?>\n<wsdata></wsdata>", Options, requestedWsId: "DB-AXF-999S"));
     }
 
     [Fact]

@@ -5,6 +5,6 @@ public sealed class UiOptions
 {
     public const string SectionName = "Acms:Ui";
 
-    /// <summary>Attributes shown as columns on the equipment list, e.g. WSTYPE, STATE.</summary>
-    public string[] SummaryAttributes { get; set; } = ["WSTYPE", "STATE"];
+    /// <summary>Attributes shown as columns on the equipment list, e.g. EQUIPMENT, MODEL, LOCATION.</summary>
+    public string[] SummaryAttributes { get; set; } = ["EQUIPMENT", "MODEL", "LOCATION"];
 }

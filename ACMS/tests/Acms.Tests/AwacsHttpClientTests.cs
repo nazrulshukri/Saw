@@ -10,20 +10,30 @@ public class AwacsHttpClientTests
 {
     private readonly StubHttpHandler _handler = new();
     private readonly AwacsOptions _options = new() { ReadRetryCount = 1 };
-    private readonly AwacsServer _server = new() { Id = 1, Name = "AWACS-1", BaseUrl = "http://awacs01.company.local/awacs" };
+    private readonly AwacsServer _server = new() { Id = 1, Name = "MS079", BaseUrl = "http://myser01ms079.nws.nexperia.com/" };
 
     private AwacsHttpClient CreateClient() =>
         new(new HttpClient(_handler), Options.Create(_options), NullLogger<AwacsHttpClient>.Instance);
 
     [Fact]
-    public async Task Reads_all_workstations_with_ws_star_under_the_server_base_path()
+    public async Task Reads_all_workstations_with_ws_star()
     {
-        _handler.Enqueue(HttpStatusCode.OK, "<wsdata><ws id=\"A\"><STATE>IDLE</STATE></ws></wsdata>");
+        _handler.Enqueue(HttpStatusCode.OK, "<wsdata><ws><WSID>DB-AXF-013S</WSID><MODEL>XF_DBSG</MODEL></ws></wsdata>");
 
         var result = await CreateClient().GetWorkstationsAsync(_server, null);
 
-        Assert.Equal("A", Assert.Single(result).WsId);
-        Assert.Equal("http://awacs01.company.local/awacs/template/wsdata.xml?ws=*", _handler.Requests[0].ToString());
+        Assert.Equal("DB-AXF-013S", Assert.Single(result).WsId);
+        Assert.Equal("http://myser01ms079.nws.nexperia.com/template/wsdata.xml?ws=*", _handler.Requests[0].ToString());
+    }
+
+    [Fact]
+    public async Task Keeps_the_server_base_path()
+    {
+        _server.BaseUrl = "http://awacs01.company.local/awacs";
+
+        await CreateClient().GetWorkstationsAsync(_server, null);
+
+        Assert.Equal("/awacs/template/wsdata.xml", _handler.Requests[0].AbsolutePath);
     }
 
     [Fact]
@@ -35,18 +45,31 @@ public class AwacsHttpClientTests
     }
 
     [Fact]
-    public async Task GetWorkstation_returns_null_when_AWACS_returns_a_different_id()
+    public async Task Splits_long_workstation_lists_into_several_reads()
     {
-        _handler.Enqueue(HttpStatusCode.OK, "<wsdata><ws id=\"OTHER\"><STATE>IDLE</STATE></ws></wsdata>");
+        _options.MaxIdsPerRequest = 2;
+        _handler.Enqueue(HttpStatusCode.OK, "<wsdata><ws><WSID>A</WSID><X>1</X></ws><ws><WSID>B</WSID><X>1</X></ws></wsdata>");
+        _handler.Enqueue(HttpStatusCode.OK, "<wsdata><ws><WSID>C</WSID><X>1</X></ws></wsdata>");
 
-        Assert.Null(await CreateClient().GetWorkstationAsync(_server, "RM-ELM-001"));
+        var result = await CreateClient().GetWorkstationsAsync(_server, ["A", "B", "C", "a"]);
+
+        Assert.Equal(["?ws=A,B", "?ws=C"], _handler.Requests.Select(r => r.Query));
+        Assert.Equal(["A", "B", "C"], result.Select(w => w.WsId));
+    }
+
+    [Fact]
+    public async Task GetWorkstation_returns_null_for_the_empty_answer_to_an_unknown_id()
+    {
+        _handler.Enqueue(HttpStatusCode.OK, "<?xml version=\"1.0\"?>\n<wsdata></wsdata>");
+
+        Assert.Null(await CreateClient().GetWorkstationAsync(_server, "DB-AXF-999S"));
     }
 
     [Fact]
     public async Task Retries_reads_on_server_errors()
     {
         _handler.Enqueue(HttpStatusCode.ServiceUnavailable);
-        _handler.Enqueue(HttpStatusCode.OK, "<wsdata><ws id=\"A\"/></wsdata>");
+        _handler.Enqueue(HttpStatusCode.OK, "<wsdata><ws><WSID>A</WSID><X>1</X></ws></wsdata>");
 
         var result = await CreateClient().GetWorkstationsAsync(_server, ["A"]);
 
@@ -64,31 +87,56 @@ public class AwacsHttpClientTests
     }
 
     [Fact]
-    public async Task Sends_one_encoded_update_per_attribute()
+    public async Task Sends_all_changes_in_one_documented_setwsattr_call()
     {
-        var result = await CreateClient().UpdateAttributesAsync(_server, "RM-ELM-001", new Dictionary<string, string>
+        var result = await CreateClient().UpdateAttributesAsync(_server, "DB-AXF-013S", new Dictionary<string, string>
         {
-            ["TOP_LINE_1"] = "B7t,DB09,639, ",
-            ["RECIPELOAD"] = "RCP_02",
+            ["SPEED_SPEC"] = "46000",
+            ["CONTROL"] = "ATX18II,Flex",
+            ["SRCFILE"] = @"\\db-axf-013s\C$\Itec\Work\DB-AXF-013S.esm",
         });
 
         Assert.True(result.Accepted);
-        Assert.Equal(2, _handler.Requests.Count);
-        Assert.Equal("/awacs/template/wswoupdate.html", _handler.Requests[0].AbsolutePath);
-        Assert.Equal("?ws=RM-ELM-001&setwsattr=TOP_LINE_1&value=B7t%2CDB09%2C639%2C%20", _handler.Requests[0].Query);
-        Assert.Equal("?ws=RM-ELM-001&setwsattr=RECIPELOAD&value=RCP_02", _handler.Requests[1].Query);
+        var request = Assert.Single(_handler.Requests);
+        Assert.Equal("/template/wswoupdate.html", request.AbsolutePath);
+
+        var query = System.Web.HttpUtility.ParseQueryString(request.Query);
+        Assert.Equal("DB-AXF-013S", query["ws"]);
+        Assert.Equal(
+            "WsId=\"DB-AXF-013S\",SPEED_SPEC=\"46000\",CONTROL=\"ATX18II,Flex\",SRCFILE=\"\\\\db-axf-013s\\C$\\Itec\\Work\\DB-AXF-013S.esm\"",
+            query["setwsattr"]);
     }
 
     [Fact]
-    public async Task Stops_at_the_first_rejected_update_and_never_retries_it()
+    public async Task Can_use_the_colon_format()
+    {
+        _options.UpdateAttributeFormat = AwacsAttributeFormat.Colon;
+
+        await CreateClient().UpdateAttributesAsync(_server, "DB-AXF-013S", new Dictionary<string, string> { ["SPEED_SPEC"] = "46000" });
+
+        var query = System.Web.HttpUtility.ParseQueryString(_handler.Requests[0].Query);
+        Assert.Equal("WsId:DB-AXF-013S,SPEED_SPEC:46000", query["setwsattr"]);
+    }
+
+    [Theory]
+    [InlineData(AwacsAttributeFormat.Quoted, "say \"hi\"")]
+    [InlineData(AwacsAttributeFormat.Colon, "ATX18II,Flex")]
+    public async Task Refuses_values_the_format_cannot_carry_without_calling_AWACS(AwacsAttributeFormat format, string value)
+    {
+        _options.UpdateAttributeFormat = format;
+
+        var result = await CreateClient().UpdateAttributesAsync(_server, "A", new Dictionary<string, string> { ["CONTROL"] = value });
+
+        Assert.False(result.Accepted);
+        Assert.Empty(_handler.Requests);
+    }
+
+    [Fact]
+    public async Task Reports_a_rejected_update_and_never_retries_it()
     {
         _handler.Enqueue(HttpStatusCode.InternalServerError);
 
-        var result = await CreateClient().UpdateAttributesAsync(_server, "A", new Dictionary<string, string>
-        {
-            ["X"] = "1",
-            ["Y"] = "2",
-        });
+        var result = await CreateClient().UpdateAttributesAsync(_server, "A", new Dictionary<string, string> { ["X"] = "1", ["Y"] = "2" });
 
         Assert.False(result.Accepted);
         Assert.Contains("500", result.Detail);

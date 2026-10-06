@@ -15,4 +15,10 @@ public sealed class EquipmentRulesOptions
     /// This stops typos from creating new attributes on AWACS.
     /// </summary>
     public bool AllowNewAttributes { get; set; }
+
+    /// <summary>
+    /// Attributes a workstation can have even when they are empty. AWACS leaves empty attributes out of
+    /// <c>wsdata.xml</c>, so these are offered on the edit page and accepted even when AWACS did not return them.
+    /// </summary>
+    public string[] KnownAttributes { get; set; } = [];
 }

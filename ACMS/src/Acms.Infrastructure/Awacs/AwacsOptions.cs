@@ -1,8 +1,8 @@
 namespace Acms.Infrastructure.Awacs;
 
 /// <summary>
-/// AWACS connector settings, bound from the "Awacs" section.
-/// The paths and the update query format must match "AWACS API RESTful.pdf".
+/// AWACS connector settings, bound from the "Awacs" section. Defaults follow the ITEC document
+/// "Urls for manipulating workstations".
 /// </summary>
 public sealed class AwacsOptions
 {
@@ -18,11 +18,14 @@ public sealed class AwacsOptions
     public string UpdatePath { get; set; } = "template/wswoupdate.html";
 
     /// <summary>
-    /// Query string sent to <see cref="UpdatePath"/> for each changed attribute.
-    /// Tokens: <c>{ws}</c>, <c>{name}</c>, <c>{value}</c>. Each token is URL-encoded.
-    /// CONFIRM against the AWACS API document before production use.
+    /// How <c>setwsattr</c> is written: <see cref="AwacsAttributeFormat.Quoted"/>
+    /// (<c>WsId="WSID",attr="value"</c>, values may contain commas) or <see cref="AwacsAttributeFormat.Colon"/>
+    /// (<c>WsId:WSID,attr:value</c>). All changed attributes are sent in one call.
     /// </summary>
-    public string UpdateQueryTemplate { get; set; } = "ws={ws}&setwsattr={name}&value={value}";
+    public AwacsAttributeFormat UpdateAttributeFormat { get; set; } = AwacsAttributeFormat.Quoted;
+
+    /// <summary>Largest number of WSIDs in one <c>wsdata.xml?ws=A,B,C</c> read; longer lists are split.</summary>
+    public int MaxIdsPerRequest { get; set; } = 50;
 
     /// <summary>
     /// Text that marks an update response as failed even with HTTP 200 (case-insensitive).

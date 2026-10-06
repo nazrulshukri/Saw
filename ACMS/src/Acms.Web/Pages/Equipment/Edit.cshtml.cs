@@ -15,6 +15,7 @@ public class EditModel : PageModel
     private readonly IAwacsClient _awacs;
     private readonly EquipmentChangeService _changes;
     private readonly HashSet<string> _readOnly;
+    private readonly string[] _knownAttributes;
 
     public EditModel(
         IServerRepository servers,
@@ -26,6 +27,7 @@ public class EditModel : PageModel
         _awacs = awacs;
         _changes = changes;
         _readOnly = new HashSet<string>(rules.Value.ReadOnlyAttributes, StringComparer.OrdinalIgnoreCase);
+        _knownAttributes = rules.Value.KnownAttributes;
     }
 
     [BindProperty(SupportsGet = true)]
@@ -107,8 +109,17 @@ public class EditModel : PageModel
                 return;
             }
 
-            Attributes = workstation.Attributes
-                .OrderBy(a => a.Key, StringComparer.OrdinalIgnoreCase)
+            // AWACS leaves empty attributes out of wsdata.xml; show the known ones anyway so they can be
+            // filled in, as on the AWACS edit workstation page.
+            var values = new Dictionary<string, string>(workstation.Attributes, StringComparer.OrdinalIgnoreCase);
+            foreach (var name in _knownAttributes)
+            {
+                values.TryAdd(name, string.Empty);
+            }
+
+            Attributes = values
+                .OrderBy(a => !string.Equals(a.Key, "WSID", StringComparison.OrdinalIgnoreCase))
+                .ThenBy(a => a.Key, StringComparer.OrdinalIgnoreCase)
                 .Select(a => new AttributeInput { Name = a.Key, Value = a.Value, Original = a.Value })
                 .ToList();
         }

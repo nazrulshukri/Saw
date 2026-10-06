@@ -157,6 +157,38 @@ public class EquipmentChangeServiceTests
     }
 
     [Fact]
+    public async Task Allows_known_attributes_that_AWACS_did_not_return_because_they_are_empty()
+    {
+        _rules.KnownAttributes = ["SPEED_SPEC"];
+
+        var result = await CreateService().EditAsync(
+            Request(new() { ["speed_spec"] = "46000" }, expectedOriginal: new() { ["SPEED_SPEC"] = "" }),
+            "user");
+
+        Assert.Equal(AuditOutcome.Success, result.Outcome);
+        Assert.Equal("46000", _awacs.Stations[WsId]["speed_spec"]);
+    }
+
+    [Fact]
+    public async Task Clearing_a_value_is_verified_when_AWACS_stops_returning_it()
+    {
+        var result = await CreateService().EditAsync(Request(new() { ["RECIPELOAD"] = "" }), "user");
+
+        Assert.Equal(AuditOutcome.Success, result.Outcome);
+        Assert.False(_awacs.Stations[WsId].ContainsKey("RECIPELOAD"));
+    }
+
+    [Fact]
+    public async Task Rejects_double_quotes_because_setwsattr_cannot_carry_them()
+    {
+        var result = await CreateService().EditAsync(Request(new() { ["RECIPELOAD"] = "RCP \"A\"" }), "user");
+
+        Assert.Equal(AuditOutcome.Rejected, result.Outcome);
+        Assert.Contains("double quote", result.Message);
+        Assert.Equal(0, _awacs.UpdateCalls);
+    }
+
+    [Fact]
     public async Task Rejects_when_AWACS_changed_after_the_form_was_loaded()
     {
         var result = await CreateService().EditAsync(

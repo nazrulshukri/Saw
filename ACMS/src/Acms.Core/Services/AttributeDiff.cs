@@ -5,7 +5,7 @@ public static class AttributeDiff
 {
     /// <summary>
     /// Returns the requested attributes whose value differs from the current value.
-    /// Attributes missing from <paramref name="current"/> count as different.
+    /// A missing attribute counts as empty, because AWACS leaves empty attributes out of wsdata.xml.
     /// Values are compared trimmed but returned exactly as requested, so a value such as
     /// <c>"B7t,DB09,639, "</c> reaches AWACS unchanged.
     /// </summary>
@@ -17,7 +17,9 @@ public static class AttributeDiff
 
         foreach (var (name, value) in requested)
         {
-            if (!current.TryGetValue(name, out var currentValue) || Normalize(currentValue) != Normalize(value))
+            current.TryGetValue(name, out var currentValue);
+
+            if (Normalize(currentValue) != Normalize(value))
             {
                 changes[name] = value ?? string.Empty;
             }
@@ -26,7 +28,10 @@ public static class AttributeDiff
         return changes;
     }
 
-    /// <summary>Returns every expected attribute whose re-read value does not match.</summary>
+    /// <summary>
+    /// Returns every expected attribute whose re-read value does not match. An attribute AWACS no longer
+    /// returns matches an expected empty value (clearing a value removes it from wsdata.xml).
+    /// </summary>
     public static List<AttributeMismatch> Verify(
         IReadOnlyDictionary<string, string> after,
         IReadOnlyDictionary<string, string> expected)
@@ -37,7 +42,7 @@ public static class AttributeDiff
         {
             after.TryGetValue(name, out var actual);
 
-            if (actual is null || Normalize(actual) != Normalize(expectedValue))
+            if (Normalize(actual) != Normalize(expectedValue))
             {
                 mismatches.Add(new AttributeMismatch(name, Normalize(expectedValue), actual));
             }

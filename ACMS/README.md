@@ -4,14 +4,23 @@ ASP.NET Core 8 implementation of the *ACMS Project Proposal*. It gives one web f
 to every AWACS server: engineers find equipment, change its attributes through a guided and
 verified workflow, and every change lands in one central audit trail.
 
-ACMS only uses the documented AWACS HTTP/XML interfaces. It never touches the AWACS
-database and never invents endpoints.
+ACMS only uses the AWACS HTTP/XML interfaces documented by ITEC in "Urls for manipulating
+workstations". It never touches the AWACS database and never invents endpoints:
+
+| Purpose | AWACS URL |
+|---|---|
+| Read workstations | `/template/wsdata.xml?ws=WSID` (also `ws=*` and `ws=WS1,WS2`) |
+| Change workstation attributes | `/template/wswoupdate.html?ws=WSID&setwsattr=WsId="WSID",attr="value",attr2="value2"` |
+
+The second URL does the same as **Save changes** on the AWACS page
+`/template/awacs_editws.html`.
 
 | Proposal | Where it lives |
 |---|---|
 | Multi-server dashboard | `Pages/Index` – reachability and workstation count per server |
 | Equipment search across servers | `Pages/Equipment/Index`, `Details` |
 | Guided, verified edit | `Pages/Equipment/Edit` → `EquipmentChangeService` |
+| Bulk update (one attribute, many machines) | `Pages/Equipment/Bulk` → `BulkUpdateService` |
 | Central audit trail | `Pages/Audit`, table `AuditEntries` |
 | Server configuration | `Pages/Admin/Servers` (Administrator only) |
 | Windows Auth + AD groups → roles | `Security/AdGroupClaimsTransformation` |
@@ -49,6 +58,31 @@ ACMS/
 Once the update has been sent, steps 6 and 7 always finish, even if the browser disconnects.
 Updates are never retried automatically; the re-read decides what really happened.
 
+## Bulk update (for example a new SPEED_SPEC list from IE)
+
+When IE sends a new UPH ("Change T Speed") for many machines, there is no need to look up each
+machine in MMSv3, open `awacs_editws.html` on its AWACS server and click **Save changes** one by one.
+
+1. Open **Bulk update** (Engineer or Administrator).
+2. Attribute to change: `SPEED_SPEC`.
+3. Paste the machines and new values. You can copy the rows straight from the e-mail or Excel table:
+   ACMS uses the **first column as the WSID** and the **last column as the new value**, so the columns in
+   between (package, state, Prod%, old T speed...) are ignored. Rows with `N/A` or no value are skipped,
+   and so is the header row.
+4. **Preview**. ACMS reads every active AWACS server (`wsdata.xml?ws=A,B,C`) to find the machine and its
+   current value. Nothing is changed yet. Each row shows *Will change*, *Already set*, *Skipped*,
+   *Not found*, *On several servers* or *Unknown* (a server could not be read).
+5. Untick any machine you want to leave out and click **Apply selected changes**.
+   Each machine is then changed (one `setwsattr` call), re-read, verified and audited, exactly like a
+   single edit. A machine whose value changed on AWACS after the preview is refused, not overwritten.
+
+Running the same list again afterwards should show every machine as *Already set*, which is a quick
+cross-check that all values are on AWACS.
+
+Why not let a script fill in `awacs_editws.html` and click the button? The ITEC document says to stick
+to the documented URLs, and a scripted browser breaks whenever the page layout changes. The
+`setwsattr` URL is what the button does, and ACMS adds the verification and the audit trail.
+
 ## Run it locally
 
 You need the .NET 8 SDK. Development mode uses SQLite, a fake AWACS with demo
@@ -81,12 +115,14 @@ All settings are in `src/Acms.Web/appsettings.json`. On the server, override the
 | `Acms:Ui:SummaryAttributes` | Columns shown on the equipment list |
 | `Awacs:WorkstationDataPath` | Read interface, default `template/wsdata.xml` |
 | `Awacs:UpdatePath` | Update interface, default `template/wswoupdate.html` |
-| `Awacs:UpdateQueryTemplate` | Query sent per changed attribute. Tokens `{ws}`, `{name}`, `{value}` |
+| `Awacs:UpdateAttributeFormat` | `Quoted` (default, `attr="value"`, values may contain commas) or `Colon` (`attr:value`) |
+| `Awacs:MaxIdsPerRequest` | Longest `ws=A,B,C` list in one read (default 50); longer lists are split |
 | `Awacs:UpdateFailureMarkers` | Text that marks an update response as failed even with HTTP 200 |
 | `Awacs:WorkstationElementNames` / `WorkstationIdNames` | How to find workstations and their id in `wsdata.xml` |
 | `Awacs:UseDefaultCredentials` | Call AWACS as the app pool account (Windows auth) |
-| `EquipmentRules:ReadOnlyAttributes` | Attributes ACMS never changes (default `WSID`) |
-| `EquipmentRules:AllowNewAttributes` | Allow creating attributes that do not exist yet (default off) |
+| `EquipmentRules:ReadOnlyAttributes` | Attributes ACMS never changes (`WSID`, and `UPDATED`, which AWACS stamps on save) |
+| `EquipmentRules:KnownAttributes` | Attributes that can be filled in even when empty. AWACS leaves empty attributes out of `wsdata.xml`, so without this list e.g. an empty `AREA` could not be set |
+| `EquipmentRules:AllowNewAttributes` | Allow any other attribute name (default off, so typos cannot create attributes) |
 
 Roles:
 
@@ -116,18 +152,19 @@ Users in none of the mapped groups get "Access denied".
 
 ## Confirm before go-live
 
-These parts depend on AWACS details that were not in the proposal. They are configuration
-only, with no code changes needed:
+The read and update URLs and their formats come from the ITEC document. Still check, with
+configuration only and no code changes:
 
-- [ ] **Update query format.** `Awacs:UpdateQueryTemplate` is currently an assumption
-      (`ws={ws}&setwsattr={name}&value={value}`). Match it to *AWACS API RESTful.pdf*.
-- [ ] **`wsdata.xml` layout.** The parser handles `<ws id="..">` elements, repeated record
-      elements, and a single flat record (see `AwacsXmlParserTests`). Check it against a real
-      response and adjust `WorkstationElementNames` / `WorkstationIdNames` if needed.
-- [ ] **Update error responses.** If AWACS answers HTTP 200 with an error page, put the
-      error text in `UpdateFailureMarkers`. The re-read catches it anyway, but the message is clearer.
+- [ ] **One test change on a spare machine.** Change one attribute and check it on `awacs_editws.html`.
+      Also try a value with a comma (for example `CONTROL = ATX18II,Flex`) to confirm AWACS keeps quoted
+      values together. If it does not, ACMS's re-read reports the change as *Failed* in the audit trail.
+- [ ] **Update error responses.** If AWACS answers HTTP 200 with an error page, put the error text in
+      `Awacs:UpdateFailureMarkers`. The re-read catches it anyway, but the message is clearer.
 - [ ] **AD group names** in `Acms:Security:RoleMappings`.
-- [ ] **Read-only attributes**: which attributes engineers must never change.
+- [ ] **Read-only and known attributes** in `EquipmentRules` (taken from the AWACS edit workstation page;
+      the `WO_*` attributes are left out of the known list on purpose).
+- [ ] **AWACS servers.** Add every server (for example `http://myser01ms079.nws.nexperia.com/`) under
+      **Servers**. The bulk update searches all active servers.
 
 ## Not implemented on purpose
 
@@ -149,6 +186,26 @@ PUT  /api/servers/{id}/workstations/{wsId}/attributes      (Engineer, Administra
        "expectedOriginal": { "RECIPELOAD": "RCP_01" } }
      → 200 Success/NoChange, 400 Rejected, 409 conflict, 502 AWACS failure
 GET  /api/audit?serverId=&wsId=&userName=&action=&outcome=&fromUtc=&toUtc=&page=&pageSize=
+POST /api/bulk-update                                       (Engineer, Administrator)
+     { "attribute": "SPEED_SPEC",
+       "rows": [ { "wsId": "DB-AXF-012S", "value": "28000" } ],
+       "dryRun": true }
+     → preview, plus results when "dryRun": false
+```
+
+`dryRun` defaults to `true`, so a script only changes AWACS when it says so. Example from PowerShell
+with your Windows login:
+
+```powershell
+$body = @{
+  attribute = "SPEED_SPEC"
+  dryRun    = $true            # look first, then run again with $false
+  rows      = @(Import-Csv .\new-uph.csv | ForEach-Object { @{ wsId = $_.Ws; value = $_.'Change T Speed' } })
+} | ConvertTo-Json -Depth 3
+
+$r = Invoke-RestMethod https://acms.company.local/api/bulk-update -Method Post `
+       -UseDefaultCredentials -ContentType "application/json" -Body $body
+$r.preview.rows | Format-Table wsId, serverName, currentValue, newValue, status
 ```
 
 ## Project phases

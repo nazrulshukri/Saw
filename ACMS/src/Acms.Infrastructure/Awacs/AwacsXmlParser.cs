@@ -31,6 +31,13 @@ public static class AwacsXmlParser
         foreach (var element in elements)
         {
             var attributes = ReadAttributes(element);
+
+            // An unknown WSID is answered with an empty <wsdata></wsdata>: that is not a workstation.
+            if (attributes.Count == 0)
+            {
+                continue;
+            }
+
             var wsId = FindId(attributes, options.WorkstationIdNames)
                 ?? (elements.Count == 1 ? requestedWsId : null);
 

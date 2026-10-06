@@ -25,16 +25,22 @@ public sealed class AwacsHttpClient : IAwacsClient
         IReadOnlyCollection<string>? wsIds,
         CancellationToken cancellationToken = default)
     {
-        // "*" and "," are part of the AWACS syntax, so only the ids themselves are encoded.
-        var wsParameter = wsIds is null || wsIds.Count == 0
-            ? "*"
-            : string.Join(",", wsIds.Select(Uri.EscapeDataString));
+        if (wsIds is null || wsIds.Count == 0)
+        {
+            var all = await GetWithRetryAsync(BuildUri(server, _options.WorkstationDataPath, "ws=*"), cancellationToken);
+            return AwacsXmlParser.Parse(all, _options);
+        }
 
-        var uri = BuildUri(server, _options.WorkstationDataPath, "ws=" + wsParameter);
-        var xml = await GetWithRetryAsync(uri, cancellationToken);
-        var requested = wsIds?.Count == 1 ? wsIds.First() : null;
+        // "," is part of the AWACS syntax, so only the ids themselves are encoded.
+        var result = new List<Workstation>();
+        foreach (var chunk in wsIds.Distinct(StringComparer.OrdinalIgnoreCase).Chunk(Math.Max(1, _options.MaxIdsPerRequest)))
+        {
+            var uri = BuildUri(server, _options.WorkstationDataPath, "ws=" + string.Join(",", chunk.Select(Uri.EscapeDataString)));
+            var xml = await GetWithRetryAsync(uri, cancellationToken);
+            result.AddRange(AwacsXmlParser.Parse(xml, _options, chunk.Length == 1 ? chunk[0] : null));
+        }
 
-        return AwacsXmlParser.Parse(xml, _options, requested);
+        return result;
     }
 
     public async Task<Workstation?> GetWorkstationAsync(
@@ -52,36 +58,36 @@ public sealed class AwacsHttpClient : IAwacsClient
         IReadOnlyDictionary<string, string> changes,
         CancellationToken cancellationToken = default)
     {
-        foreach (var (name, value) in changes)
+        string setWsAttr;
+        try
         {
-            var query = _options.UpdateQueryTemplate
-                .Replace("{ws}", Uri.EscapeDataString(wsId), StringComparison.Ordinal)
-                .Replace("{name}", Uri.EscapeDataString(name), StringComparison.Ordinal)
-                .Replace("{value}", Uri.EscapeDataString(value), StringComparison.Ordinal);
-
-            var uri = BuildUri(server, _options.UpdatePath, query);
-            _logger.LogInformation("AWACS update {Server} {WsId}: {Attribute}", server.Name, wsId, name);
-
-            // Updates are never retried automatically: the re-read decides what happened.
-            using var response = await _http.GetAsync(uri, cancellationToken);
-            var body = await response.Content.ReadAsStringAsync(cancellationToken);
-
-            if (!response.IsSuccessStatusCode)
-            {
-                return new AwacsUpdateResult(false,
-                    $"HTTP {(int)response.StatusCode} {response.ReasonPhrase} while setting {name}");
-            }
-
-            var marker = _options.UpdateFailureMarkers
-                .FirstOrDefault(m => !string.IsNullOrEmpty(m) && body.Contains(m, StringComparison.OrdinalIgnoreCase));
-
-            if (marker is not null)
-            {
-                return new AwacsUpdateResult(false, $"AWACS response for {name} contains '{marker}': {Truncate(body)}");
-            }
+            setWsAttr = AwacsSetWsAttr.Build(wsId, changes, _options.UpdateAttributeFormat);
+        }
+        catch (ArgumentException ex)
+        {
+            return new AwacsUpdateResult(false, ex.Message);
         }
 
-        return new AwacsUpdateResult(true, null);
+        var uri = BuildUri(server, _options.UpdatePath,
+            "ws=" + Uri.EscapeDataString(wsId) + "&setwsattr=" + Uri.EscapeDataString(setWsAttr));
+
+        _logger.LogInformation("AWACS update {Server} {WsId}: {Attributes}", server.Name, wsId, string.Join(", ", changes.Keys));
+
+        // Updates are never retried automatically: the re-read decides what happened.
+        using var response = await _http.GetAsync(uri, cancellationToken);
+        var body = await response.Content.ReadAsStringAsync(cancellationToken);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            return new AwacsUpdateResult(false, $"HTTP {(int)response.StatusCode} {response.ReasonPhrase}");
+        }
+
+        var marker = _options.UpdateFailureMarkers
+            .FirstOrDefault(m => !string.IsNullOrEmpty(m) && body.Contains(m, StringComparison.OrdinalIgnoreCase));
+
+        return marker is null
+            ? new AwacsUpdateResult(true, null)
+            : new AwacsUpdateResult(false, $"AWACS response contains '{marker}': {Truncate(body)}");
     }
 
     private static Uri BuildUri(AwacsServer server, string relativePath, string query)

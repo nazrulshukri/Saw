@@ -1,5 +1,4 @@
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using Acms.Core.Abstractions;
 using Acms.Core.Domain;
 using Microsoft.Extensions.Logging;
@@ -44,14 +43,14 @@ public sealed class EquipmentChangeResult
 /// validate, resolve the server, capture before-values, apply only the differences,
 /// re-read and verify, then write the audit record. Nothing is stored in ACMS except the audit row.
 /// </summary>
-public sealed partial class EquipmentChangeService
+public sealed class EquipmentChangeService
 {
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = false };
 
     private readonly IServerRepository _servers;
     private readonly IAwacsClient _awacs;
     private readonly IAuditLog _audit;
-    private readonly EquipmentRulesOptions _rules;
+    private readonly EditRules _rules;
     private readonly TimeProvider _clock;
     private readonly ILogger<EquipmentChangeService> _logger;
 
@@ -66,7 +65,7 @@ public sealed partial class EquipmentChangeService
         _servers = servers;
         _awacs = awacs;
         _audit = audit;
-        _rules = rules.Value;
+        _rules = new EditRules(rules.Value);
         _clock = clock;
         _logger = logger;
     }
@@ -238,7 +237,7 @@ public sealed partial class EquipmentChangeService
     {
         var errors = new List<string>();
 
-        if (string.IsNullOrWhiteSpace(request.WsId) || !IdentifierPattern().IsMatch(request.WsId))
+        if (!EditRules.IsValidIdentifier(request.WsId))
         {
             errors.Add("WSID is missing or contains invalid characters.");
         }
@@ -251,26 +250,7 @@ public sealed partial class EquipmentChangeService
 
         foreach (var (name, value) in request.Values)
         {
-            if (string.IsNullOrWhiteSpace(name) || !IdentifierPattern().IsMatch(name))
-            {
-                errors.Add($"Attribute name '{name}' is invalid.");
-                continue;
-            }
-
-            if (_rules.ReadOnlyAttributes.Contains(name, StringComparer.OrdinalIgnoreCase))
-            {
-                errors.Add($"Attribute '{name}' is read-only in ACMS.");
-            }
-
-            if ((value ?? string.Empty).Length > _rules.MaxValueLength)
-            {
-                errors.Add($"Value of '{name}' is longer than {_rules.MaxValueLength} characters.");
-            }
-
-            if ((value ?? string.Empty).Any(char.IsControl))
-            {
-                errors.Add($"Value of '{name}' contains control characters.");
-            }
+            errors.AddRange(_rules.Validate(name, value));
         }
 
         return errors;
@@ -278,13 +258,8 @@ public sealed partial class EquipmentChangeService
 
     private List<string> ValidateAgainstCurrent(IReadOnlyDictionary<string, string> values, Workstation current)
     {
-        if (_rules.AllowNewAttributes)
-        {
-            return [];
-        }
-
         return values.Keys
-            .Where(name => !current.Attributes.ContainsKey(name))
+            .Where(name => !_rules.IsSettable(name, current))
             .Select(name => $"Attribute '{name}' does not exist on workstation '{current.WsId}'.")
             .ToList();
     }
@@ -370,8 +345,4 @@ public sealed partial class EquipmentChangeService
     }
 
     private static string ToJson<T>(T value) => JsonSerializer.Serialize(value, JsonOptions);
-
-    // Letters, digits, '-', '_' and '.', e.g. "RM-ELM-001", "TOP_LINE_1".
-    [GeneratedRegex(@"^[A-Za-z0-9_\-\.]{1,64}$")]
-    private static partial Regex IdentifierPattern();
 }

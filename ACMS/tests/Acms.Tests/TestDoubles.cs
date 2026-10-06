@@ -46,17 +46,45 @@ internal sealed class InMemoryAuditLog : IAuditLog
         Task.FromResult(new PagedResult<AuditEntry>(Entries, Entries.Count, 1, Entries.Count));
 }
 
-/// <summary>AWACS stand-in whose behaviour each test can script.</summary>
+/// <summary>AWACS stand-in whose behaviour each test can script. Behaves like AWACS for empty values.</summary>
 internal sealed class ScriptedAwacsClient : IAwacsClient
 {
-    public Dictionary<string, Dictionary<string, string>> Stations { get; } = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<int, Dictionary<string, Dictionary<string, string>>> _servers = [];
+
+    /// <summary>Workstations of server 1.</summary>
+    public Dictionary<string, Dictionary<string, string>> Stations => For(1);
 
     /// <summary>When true the update call reports success but changes nothing.</summary>
     public bool IgnoreUpdates { get; set; }
 
     public Exception? ThrowOnUpdate { get; set; }
     public Exception? ThrowOnRead { get; set; }
+
+    /// <summary>Servers whose reads fail.</summary>
+    public HashSet<int> UnreachableServers { get; } = [];
+
     public int UpdateCalls { get; private set; }
+
+    public Dictionary<string, Dictionary<string, string>> For(int serverId)
+    {
+        if (!_servers.TryGetValue(serverId, out var stations))
+        {
+            _servers[serverId] = stations = new Dictionary<string, Dictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        return stations;
+    }
+
+    public void Add(int serverId, string wsId, params (string Name, string Value)[] attributes)
+    {
+        var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["WSID"] = wsId };
+        foreach (var (name, value) in attributes)
+        {
+            values[name] = value;
+        }
+
+        For(serverId)[wsId] = values;
+    }
 
     public Task<IReadOnlyList<Workstation>> GetWorkstationsAsync(AwacsServer server, IReadOnlyCollection<string>? wsIds, CancellationToken cancellationToken = default)
     {
@@ -65,7 +93,12 @@ internal sealed class ScriptedAwacsClient : IAwacsClient
             throw ThrowOnRead;
         }
 
-        IReadOnlyList<Workstation> list = Stations
+        if (UnreachableServers.Contains(server.Id))
+        {
+            throw new HttpRequestException($"{server.Name} is unreachable");
+        }
+
+        IReadOnlyList<Workstation> list = For(server.Id)
             .Where(s => wsIds is null || wsIds.Count == 0 || wsIds.Contains(s.Key, StringComparer.OrdinalIgnoreCase))
             .Select(s => new Workstation(s.Key, s.Value))
             .ToList();
@@ -86,9 +119,18 @@ internal sealed class ScriptedAwacsClient : IAwacsClient
 
         if (!IgnoreUpdates)
         {
+            var attributes = For(server.Id)[wsId];
             foreach (var (name, value) in changes)
             {
-                Stations[wsId][name] = value;
+                // AWACS leaves empty attributes out of wsdata.xml.
+                if (string.IsNullOrWhiteSpace(value))
+                {
+                    attributes.Remove(name);
+                }
+                else
+                {
+                    attributes[name] = value;
+                }
             }
         }
 

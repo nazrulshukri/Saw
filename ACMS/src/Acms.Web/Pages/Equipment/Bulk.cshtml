@@ -1,0 +1,223 @@
+@page
+@using Acms.Core.Services
+@using Acms.Web.Security
+@model Acms.Web.Pages.Equipment.BulkModel
+@{
+    ViewData["Title"] = "Bulk update";
+
+    static string StatusClass(BulkRowStatus status) => status switch
+    {
+        BulkRowStatus.Change => "bg-primary",
+        BulkRowStatus.NoChange => "bg-secondary",
+        BulkRowStatus.NoValue => "bg-light text-dark",
+        BulkRowStatus.Duplicate => "bg-light text-dark",
+        BulkRowStatus.Unknown => "bg-warning text-dark",
+        _ => "bg-danger",
+    };
+
+    static string StatusText(BulkRowStatus status) => status switch
+    {
+        BulkRowStatus.Change => "Will change",
+        BulkRowStatus.NoChange => "Already set",
+        BulkRowStatus.NoValue => "Skipped",
+        BulkRowStatus.NotFound => "Not found",
+        BulkRowStatus.Ambiguous => "On several servers",
+        BulkRowStatus.Unknown => "Unknown",
+        _ => status.ToString(),
+    };
+}
+
+<h1 class="h3 mb-1">Bulk update</h1>
+<p class="text-muted mb-3">
+    Set one attribute on many machines at once, for example a new <span class="mono">SPEED_SPEC</span> list from IE.
+    ACMS finds the AWACS server of every machine, shows what will change, and only changes AWACS after you confirm.
+</p>
+
+<form method="post" class="card mb-4">
+    <div class="card-body">
+        <div class="row g-3">
+            <div class="col-md-3">
+                <label asp-for="Attribute" class="form-label">Attribute to change</label>
+                <input asp-for="Attribute" class="form-control mono" list="knownAttributes" autocomplete="off" />
+                <datalist id="knownAttributes">
+                    @foreach (var name in Model.KnownAttributes)
+                    {
+                        <option value="@name"></option>
+                    }
+                </datalist>
+            </div>
+            <div class="col-md-9">
+                <label asp-for="Input" class="form-label">Machines and new values</label>
+                <textarea asp-for="Input" class="form-control mono" rows="8" spellcheck="false"
+                          placeholder="DB-AXF-012S	28000&#10;DB-AXF-013S	46000&#10;DB-AXF-014S	42000"></textarea>
+                <div class="form-text">
+                    One machine per line: WSID and new value. You can paste rows straight from Excel or an e-mail table:
+                    the first column is used as the WSID and the last column as the new value. Rows with N/A or no value are skipped.
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="card-footer bg-white">
+        <button type="submit" asp-page-handler="Preview" class="btn btn-primary">Preview</button>
+        <span class="text-muted small ms-2">Nothing is changed on AWACS until you confirm.</span>
+    </div>
+</form>
+
+@if (Model.Info is not null)
+{
+    <div class="alert alert-info">@Model.Info</div>
+}
+
+@if (Model.Preview is { } preview)
+{
+    @if (!preview.IsValid)
+    {
+        <div class="alert alert-warning">
+            @foreach (var error in preview.Errors)
+            {
+                <div>@error</div>
+            }
+        </div>
+    }
+    else
+    {
+        @foreach (var error in preview.ServerErrors)
+        {
+            <div class="alert alert-warning py-2">@error</div>
+        }
+
+        var changes = preview.Count(BulkRowStatus.Change);
+
+        <form method="post" class="card" id="applyForm" data-count="@changes">
+            <input type="hidden" asp-for="Attribute" />
+            <input type="hidden" asp-for="Input" />
+
+            <div class="card-header bg-white d-flex flex-wrap gap-3 align-items-center">
+                <span class="fw-semibold">Preview of <span class="mono">@preview.Attribute</span></span>
+                <span class="badge bg-primary">@changes to change</span>
+                <span class="badge bg-secondary">@preview.Count(BulkRowStatus.NoChange) already set</span>
+                <span class="badge bg-light text-dark">@(preview.Count(BulkRowStatus.NoValue) + preview.Count(BulkRowStatus.Duplicate)) skipped</span>
+                @{ var problems = preview.Rows.Count - changes - preview.Count(BulkRowStatus.NoChange) - preview.Count(BulkRowStatus.NoValue) - preview.Count(BulkRowStatus.Duplicate); }
+                @if (problems > 0)
+                {
+                    <span class="badge bg-danger">@problems need attention</span>
+                }
+            </div>
+
+            <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th class="text-center">Apply</th>
+                            <th>Line</th>
+                            <th>WSID</th>
+                            <th>Server</th>
+                            <th>Current</th>
+                            <th>New</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    @{ var k = 0; }
+                    @foreach (var row in preview.Rows)
+                    {
+                        <tr class="@(row.Status == BulkRowStatus.Change ? "" : "text-muted")">
+                            <td class="text-center">
+                                @if (row.Status == BulkRowStatus.Change)
+                                {
+                                    <input type="checkbox" class="form-check-input" asp-for="Items[k].Selected" aria-label="Apply @row.WsId" />
+                                    <input type="hidden" asp-for="Items[k].ServerId" />
+                                    <input type="hidden" asp-for="Items[k].WsId" />
+                                    <input type="hidden" asp-for="Items[k].Current" />
+                                    <input type="hidden" asp-for="Items[k].NewValue" />
+                                    k++;
+                                }
+                            </td>
+                            <td class="small">@row.LineNumber</td>
+                            <td class="mono">@row.WsId</td>
+                            <td>@row.ServerName</td>
+                            <td class="mono">@row.CurrentValue</td>
+                            <td class="mono @(row.Status == BulkRowStatus.Change ? "fw-semibold" : "")">@row.NewValue</td>
+                            <td>
+                                <span class="badge @StatusClass(row.Status)">@StatusText(row.Status)</span>
+                                @if (!string.IsNullOrEmpty(row.Message))
+                                {
+                                    <span class="small ms-1">@row.Message</span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+
+            @if (changes > 0)
+            {
+                <div class="card-footer bg-white">
+                    <button type="submit" asp-page-handler="Apply" class="btn btn-primary">Apply selected changes</button>
+                    <span class="text-muted small ms-2">
+                        Each machine is changed, re-read and verified one by one, and recorded in the audit trail.
+                    </span>
+                </div>
+            }
+        </form>
+    }
+}
+
+@if (Model.Results is { } results)
+{
+    var ok = results.Count(r => r.Result.Succeeded);
+
+    <div class="card">
+        <div class="card-header bg-white d-flex flex-wrap gap-3 align-items-center">
+            <span class="fw-semibold">Result for <span class="mono">@Model.Attribute</span></span>
+            <span class="badge bg-success">@ok succeeded</span>
+            @if (ok < results.Count)
+            {
+                <span class="badge bg-danger">@(results.Count - ok) not changed</span>
+            }
+            <a class="ms-auto small" asp-page="/Audit/Index" asp-route-UserName="@User.AcmsUserName()">Open my changes in the audit trail</a>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+                <thead>
+                    <tr><th>WSID</th><th>Server</th><th>Before</th><th>After (re-read)</th><th>Outcome</th></tr>
+                </thead>
+                <tbody>
+                @foreach (var r in results)
+                {
+                    r.Result.Before.TryGetValue(Model.Attribute.Trim(), out var before);
+                    r.Result.After.TryGetValue(Model.Attribute.Trim(), out var after);
+                    <tr>
+                        <td class="mono">
+                            <a asp-page="Details" asp-route-serverId="@r.Item.ServerId" asp-route-wsId="@r.Item.WsId">@r.Item.WsId</a>
+                        </td>
+                        <td>@r.ServerName</td>
+                        <td class="mono">@(before ?? r.Item.ExpectedCurrent)</td>
+                        <td class="mono @(r.Result.Succeeded ? "" : "text-danger fw-semibold")">@after</td>
+                        <td>
+                            <partial name="_OutcomeBadge" model="r.Result.Outcome" />
+                            <span class="small ms-1">@r.Result.Message</span>
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    </div>
+}
+
+@section Scripts {
+    <script>
+        // Last check before AWACS is changed.
+        var applyForm = document.getElementById('applyForm');
+        if (applyForm) {
+            applyForm.addEventListener('submit', function (e) {
+                var selected = applyForm.querySelectorAll('input[type=checkbox]:checked').length;
+                if (!confirm('Change ' + selected + ' machine(s) on AWACS now?')) {
+                    e.preventDefault();
+                }
+            });
+        }
+    </script>
+}
