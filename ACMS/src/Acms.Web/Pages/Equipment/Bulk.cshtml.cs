@@ -1,4 +1,7 @@
+using System.Text.Json;
+using Acms.Core.Import;
 using Acms.Core.Services;
+using Acms.Infrastructure.Import;
 using Acms.Web.Security;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
@@ -7,63 +10,123 @@ using Microsoft.Extensions.Options;
 namespace Acms.Web.Pages.Equipment;
 
 /// <summary>
-/// Sets one attribute (for example SPEED_SPEC) on many machines from a pasted list.
-/// Requires the Engineer or Administrator role (see Program.cs).
+/// Imports an update list (Excel, CSV, Word, PDF, e-mail or pasted table), shows what will change on
+/// each machine and applies it after confirmation. Requires Engineer or Administrator (see Program.cs).
 /// </summary>
 public class BulkModel : PageModel
 {
     private readonly BulkUpdateService _bulk;
+    private readonly ImportOptions _import;
 
-    public BulkModel(BulkUpdateService bulk, IOptions<EquipmentRulesOptions> rules)
+    public BulkModel(BulkUpdateService bulk, IOptions<EquipmentRulesOptions> rules, IOptions<ImportOptions> import)
     {
         _bulk = bulk;
+        _import = import.Value;
         KnownAttributes = rules.Value.KnownAttributes;
     }
 
     [BindProperty]
-    public string Attribute { get; set; } = "SPEED_SPEC";
+    public IFormFile? Upload { get; set; }
 
     [BindProperty]
-    public string? Input { get; set; }
+    public string? Pasted { get; set; }
 
-    /// <summary>The rows to change, carried from the preview to the apply step.</summary>
+    /// <summary>The table read from the file, carried between the steps.</summary>
+    [BindProperty]
+    public string? TableJson { get; set; }
+
+    /// <summary>Target per column: WSID, an attribute name, or empty (ignored).</summary>
+    [BindProperty]
+    public List<string?> Mapping { get; set; } = [];
+
+    /// <summary>The machines to change, carried from the preview to the apply step.</summary>
     [BindProperty]
     public List<BulkItemInput> Items { get; set; } = [];
 
     public IReadOnlyList<string> KnownAttributes { get; }
+    public IReadOnlyList<string> SupportedExtensions => TableFileReader.SupportedExtensions;
+    public ImportTable? Table { get; private set; }
+    public IReadOnlyList<string> MappingErrors { get; private set; } = [];
     public BulkPreview? Preview { get; private set; }
     public IReadOnlyList<BulkApplyResult>? Results { get; private set; }
+    public string? Error { get; private set; }
     public string? Info { get; private set; }
 
     public void OnGet()
     {
     }
 
-    public async Task<IActionResult> OnPostPreviewAsync(CancellationToken cancellationToken)
+    /// <summary>Step 1: read the uploaded file or pasted text, suggest the column mapping and preview.</summary>
+    public async Task<IActionResult> OnPostReadAsync(CancellationToken cancellationToken)
     {
-        Preview = await _bulk.PreviewAsync(Attribute, BulkInputParser.Parse(Input), cancellationToken);
-        Attribute = Preview.Attribute;
-        Items = Preview.Rows
-            .Where(r => r.Status == BulkRowStatus.Change)
-            .Select(r => new BulkItemInput
+        try
+        {
+            if (Upload is { Length: > 0 })
             {
-                Selected = true,
-                ServerId = r.ServerId!.Value,
-                WsId = r.WsId,
-                Current = r.CurrentValue,
-                NewValue = r.NewValue!,
-            })
-            .ToList();
+                if (Upload.Length > _import.MaxFileSizeMb * 1024L * 1024L)
+                {
+                    Error = $"The file is larger than {_import.MaxFileSizeMb} MB.";
+                    return Page();
+                }
 
+                await using var stream = Upload.OpenReadStream();
+                Table = TableFileReader.Read(stream, Upload.FileName);
+            }
+            else if (!string.IsNullOrWhiteSpace(Pasted))
+            {
+                Table = ImportTable.Best("Pasted text", [ImportText.SplitPasted(Pasted)]);
+            }
+            else
+            {
+                Error = "Choose a file or paste a table first.";
+                return Page();
+            }
+        }
+        catch (ImportException ex)
+        {
+            Error = ex.Message;
+            return Page();
+        }
+
+        if (Table.Rows.Count == 0)
+        {
+            Error = $"No table with machines was found in {Table.Source}.";
+            Table = null;
+            return Page();
+        }
+
+        Mapping = ColumnMapper.Suggest(Table, _import, KnownAttributes).Cast<string?>().ToList();
+        TableJson = JsonSerializer.Serialize(Table);
         ModelState.Clear();
+        await BuildPreviewAsync(cancellationToken);
         return Page();
     }
 
+    /// <summary>Step 2: preview again after the column mapping was changed.</summary>
+    public async Task<IActionResult> OnPostPreviewAsync(CancellationToken cancellationToken)
+    {
+        if (!LoadTable())
+        {
+            return Page();
+        }
+
+        ModelState.Clear();
+        await BuildPreviewAsync(cancellationToken);
+        return Page();
+    }
+
+    /// <summary>Step 3: apply the selected machines.</summary>
     public async Task<IActionResult> OnPostApplyAsync(CancellationToken cancellationToken)
     {
+        LoadTable();
+
         var items = Items
-            .Where(i => i.Selected)
-            .Select(i => new BulkApplyItem(i.ServerId, i.WsId, i.Current, i.NewValue ?? string.Empty))
+            .Where(i => i.Selected && i.Values.Count > 0)
+            .Select(i => new BulkApplyItem(
+                i.ServerId,
+                i.WsId,
+                i.Values.ToDictionary(v => v.Attribute, v => v.New ?? string.Empty, StringComparer.OrdinalIgnoreCase),
+                i.Values.ToDictionary(v => v.Attribute, v => v.Current ?? string.Empty, StringComparer.OrdinalIgnoreCase)))
             .ToList();
 
         if (items.Count == 0)
@@ -72,8 +135,55 @@ public class BulkModel : PageModel
             return Page();
         }
 
-        Results = await _bulk.ApplyAsync(Attribute.Trim(), items, User.AcmsUserName(), cancellationToken);
+        Results = await _bulk.ApplyAsync(items, User.AcmsUserName(), cancellationToken);
         return Page();
+    }
+
+    public IEnumerable<string> Samples(int column) =>
+        Table!.Rows.Select(r => r[column]).Where(v => v.Length > 0).Take(3);
+
+    private bool LoadTable()
+    {
+        try
+        {
+            Table = string.IsNullOrEmpty(TableJson) ? null : JsonSerializer.Deserialize<ImportTable>(TableJson);
+        }
+        catch (JsonException)
+        {
+            Table = null;
+        }
+
+        if (Table is null)
+        {
+            Error = "The imported table was lost. Read the file again.";
+        }
+
+        return Table is not null;
+    }
+
+    private async Task BuildPreviewAsync(CancellationToken cancellationToken)
+    {
+        var (rows, errors) = ColumnMapper.ToRows(Table!, Mapping);
+        if (errors.Count > 0)
+        {
+            MappingErrors = errors;
+            return;
+        }
+
+        Preview = await _bulk.PreviewAsync(rows, cancellationToken);
+        Items = Preview.Rows
+            .Where(r => r.Status == BulkRowStatus.Change)
+            .Select(r => new BulkItemInput
+            {
+                Selected = true,
+                ServerId = r.ServerId!.Value,
+                WsId = r.WsId,
+                Values = r.Values
+                    .Where(v => v.Changed)
+                    .Select(v => new BulkValueInput { Attribute = v.Attribute, Current = v.Current, New = v.New })
+                    .ToList(),
+            })
+            .ToList();
     }
 
     public sealed class BulkItemInput
@@ -81,7 +191,13 @@ public class BulkModel : PageModel
         public bool Selected { get; set; }
         public int ServerId { get; set; }
         public string WsId { get; set; } = string.Empty;
+        public List<BulkValueInput> Values { get; set; } = [];
+    }
+
+    public sealed class BulkValueInput
+    {
+        public string Attribute { get; set; } = string.Empty;
         public string? Current { get; set; }
-        public string? NewValue { get; set; }
+        public string? New { get; set; }
     }
 }

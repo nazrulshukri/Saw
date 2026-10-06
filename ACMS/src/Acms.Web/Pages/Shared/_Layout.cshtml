@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+@inject Acms.Core.Abstractions.IAwacsClient Awacs
 @{
     var isAdmin = User.Identity?.IsAuthenticated == true
         && (await AuthorizationService.AuthorizeAsync(User, AcmsPolicies.CanAdminister)).Succeeded;
@@ -30,7 +31,7 @@
                         <li class="nav-item"><a class="nav-link" asp-page="/Equipment/Index">Equipment</a></li>
                         @if (canEdit)
                         {
-                            <li class="nav-item"><a class="nav-link" asp-page="/Equipment/Bulk">Bulk update</a></li>
+                            <li class="nav-item"><a class="nav-link" asp-page="/Equipment/Bulk">Import updates</a></li>
                         }
                         <li class="nav-item"><a class="nav-link" asp-page="/Audit/Index">Audit trail</a></li>
                         @if (isAdmin)
@@ -52,6 +53,14 @@
             </div>
         </nav>
     </header>
+
+    @if (Awacs is Acms.Infrastructure.Awacs.FakeAwacsClient)
+    {
+        <div class="alert alert-warning rounded-0 border-0 border-bottom mb-4 px-4 py-2 small" role="status">
+            <strong>DEMO MODE:</strong> the machines and values shown are fake test data. Nothing is read from or written to AWACS.
+            Set <span class="mono">Awacs:UseFake</span> to <span class="mono">false</span> to use the real servers.
+        </div>
+    }
 
     <div class="container-fluid px-4">
         <main role="main" class="pb-3">

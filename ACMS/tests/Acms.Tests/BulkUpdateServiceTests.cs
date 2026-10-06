@@ -35,13 +35,20 @@ public class BulkUpdateServiceTests
         return new BulkUpdateService(_servers, _awacs, changes, options, NullLogger<BulkUpdateService>.Instance);
     }
 
-    private static List<BulkInputLine> Lines(params (string WsId, string? Value)[] lines) =>
-        lines.Select((l, i) => new BulkInputLine(i + 1, l.WsId, l.Value)).ToList();
+    private static List<BulkInputRow> Lines(params (string WsId, string? Value)[] lines) =>
+        lines.Select((l, i) => new BulkInputRow(i + 1, l.WsId,
+            new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase) { ["SPEED_SPEC"] = l.Value })).ToList();
+
+    private static BulkApplyItem Item(BulkPreviewRow row) => new(
+        row.ServerId!.Value,
+        row.WsId,
+        row.Values.Where(v => v.Changed).ToDictionary(v => v.Attribute, v => v.New),
+        row.Values.Where(v => v.Changed).ToDictionary(v => v.Attribute, v => v.Current ?? ""));
 
     [Fact]
     public async Task Preview_locates_each_machine_and_classifies_it_without_changing_AWACS()
     {
-        var preview = await CreateService().PreviewAsync("SPEED_SPEC", Lines(
+        var preview = await CreateService().PreviewAsync(Lines(
             ("DB-AXF-012S", "28000"),
             ("db-ad3-103s", "28000"),
             ("DB-AXF-013S", "46000"),
@@ -64,9 +71,9 @@ public class BulkUpdateServiceTests
             preview.Rows.Select(r => r.Status));
 
         Assert.Equal("MS079", preview.Rows[0].ServerName);
-        Assert.Equal("25600", preview.Rows[0].CurrentValue);
+        Assert.Equal(new BulkValueChange("SPEED_SPEC", "25600", "28000", true), Assert.Single(preview.Rows[0].Values));
         Assert.Equal("MS080", preview.Rows[1].ServerName);
-        Assert.Null(preview.Rows[9].CurrentValue);
+        Assert.Null(preview.Rows[9].Values[0].Current);
         Assert.Equal(0, _awacs.UpdateCalls);
         Assert.Empty(_audit.Entries);
     }
@@ -76,18 +83,19 @@ public class BulkUpdateServiceTests
     {
         _awacs.UnreachableServers.Add(2);
 
-        var preview = await CreateService().PreviewAsync("SPEED_SPEC", Lines(("DB-AD3-103S", "28000"), ("DB-AXF-012S", "28000")));
+        var preview = await CreateService().PreviewAsync(Lines(("DB-AD3-103S", "28000"), ("DB-AXF-012S", "28000")));
 
         Assert.Equal([BulkRowStatus.Unknown, BulkRowStatus.Change], preview.Rows.Select(r => r.Status));
         Assert.Contains("MS080", Assert.Single(preview.ServerErrors));
     }
 
     [Theory]
-    [InlineData("", "Enter the attribute")]
+    [InlineData("bad name", "not a valid attribute")]
     [InlineData("WSID", "read-only")]
     public async Task Preview_rejects_invalid_attributes(string attribute, string expected)
     {
-        var preview = await CreateService().PreviewAsync(attribute, Lines(("DB-AXF-012S", "1")));
+        var preview = await CreateService().PreviewAsync(
+            [new BulkInputRow(1, "DB-AXF-012S", new Dictionary<string, string?> { [attribute] = "1" })]);
 
         Assert.False(preview.IsValid);
         Assert.Contains(expected, Assert.Single(preview.Errors));
@@ -95,11 +103,35 @@ public class BulkUpdateServiceTests
     }
 
     [Fact]
+    public async Task Preview_and_apply_several_attributes_per_machine()
+    {
+        _rules.KnownAttributes = ["SPEED_SPEC", "AREA"];
+        var service = CreateService();
+
+        var preview = await service.PreviewAsync([new BulkInputRow(1, "DB-AXF-013S", new Dictionary<string, string?>
+        {
+            ["SPEED_SPEC"] = "46000",
+            ["AREA"] = "PH3C-1",
+            ["MODEL"] = null,
+        })]);
+
+        var row = Assert.Single(preview.Rows);
+        Assert.Equal(BulkRowStatus.Change, row.Status);
+        Assert.Equal(["SPEED_SPEC:False", "AREA:True"], row.Values.Select(v => $"{v.Attribute}:{v.Changed}"));
+
+        var result = Assert.Single(await service.ApplyAsync([Item(row)], "user"));
+
+        Assert.Equal(AuditOutcome.Success, result.Result.Outcome);
+        Assert.Equal("PH3C-1", _awacs.For(1)["DB-AXF-013S"]["AREA"]);
+        Assert.Equal(1, _awacs.UpdateCalls);
+    }
+
+    [Fact]
     public async Task Preview_rejects_lists_that_are_too_long()
     {
         var lines = Enumerable.Range(1, BulkUpdateService.MaxLines + 1).Select(i => ($"WS-{i}", (string?)"1")).ToArray();
 
-        var preview = await CreateService().PreviewAsync("SPEED_SPEC", Lines(lines));
+        var preview = await CreateService().PreviewAsync(Lines(lines));
 
         Assert.False(preview.IsValid);
     }
@@ -108,10 +140,8 @@ public class BulkUpdateServiceTests
     public async Task Apply_changes_verifies_and_audits_each_machine()
     {
         var service = CreateService();
-        var preview = await service.PreviewAsync("SPEED_SPEC", Lines(("DB-AXF-012S", "28000"), ("DB-AD3-103S", "28000")));
-        var items = preview.Rows.Select(r => new BulkApplyItem(r.ServerId!.Value, r.WsId, r.CurrentValue, r.NewValue!)).ToList();
-
-        var results = await service.ApplyAsync("SPEED_SPEC", items, @"COMPANY\eng1");
+        var preview = await service.PreviewAsync(Lines(("DB-AXF-012S", "28000"), ("DB-AD3-103S", "28000")));
+        var results = await service.ApplyAsync(preview.Rows.Select(Item).ToList(), @"COMPANY\eng1");
 
         Assert.All(results, r => Assert.Equal(AuditOutcome.Success, r.Result.Outcome));
         Assert.Equal(["MS079", "MS080"], results.Select(r => r.ServerName));
@@ -125,12 +155,10 @@ public class BulkUpdateServiceTests
     public async Task Apply_refuses_a_machine_that_changed_after_the_preview()
     {
         var service = CreateService();
-        var preview = await service.PreviewAsync("SPEED_SPEC", Lines(("DB-AXF-012S", "28000")));
+        var preview = await service.PreviewAsync(Lines(("DB-AXF-012S", "28000")));
         _awacs.For(1)["DB-AXF-012S"]["SPEED_SPEC"] = "30000";
 
-        var row = preview.Rows[0];
-        var result = Assert.Single(await service.ApplyAsync("SPEED_SPEC",
-            [new BulkApplyItem(row.ServerId!.Value, row.WsId, row.CurrentValue, row.NewValue!)], "user"));
+        var result = Assert.Single(await service.ApplyAsync([Item(preview.Rows[0])], "user"));
 
         Assert.True(result.Result.IsConflict);
         Assert.Equal("30000", _awacs.For(1)["DB-AXF-012S"]["SPEED_SPEC"]);

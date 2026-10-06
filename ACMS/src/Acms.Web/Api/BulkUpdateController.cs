@@ -1,3 +1,4 @@
+using Acms.Core.Import;
 using Acms.Core.Security;
 using Acms.Core.Services;
 using Acms.Web.Security;
@@ -7,7 +8,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace Acms.Web.Api;
 
 /// <summary>
-/// Bulk update for scripts: the same preview and apply steps as the Bulk update page.
+/// Bulk update for scripts: the same preview and apply steps as the Import updates page.
 /// <c>dryRun</c> defaults to true, so a request only changes AWACS when it says <c>"dryRun": false</c>.
 /// </summary>
 [ApiController]
@@ -24,16 +25,19 @@ public sealed class BulkUpdateController : ControllerBase
 
     /// <summary>
     /// Returns 200 with the preview (and the results when <c>dryRun</c> is false),
-    /// or 400 when the attribute or the list itself is invalid.
+    /// or 400 when the list itself is invalid.
     /// </summary>
     [HttpPost]
     public async Task<ActionResult<BulkUpdateResponse>> Post([FromBody] BulkUpdateRequest body, CancellationToken cancellationToken)
     {
-        var lines = (body.Rows ?? [])
-            .Select((row, i) => new BulkInputLine(i + 1, (row.WsId ?? string.Empty).Trim(), BulkInputParser.NormalizeValue(row.Value)))
+        var rows = (body.Rows ?? [])
+            .Select((row, i) => new BulkInputRow(
+                i + 1,
+                (row.WsId ?? string.Empty).Trim(),
+                (row.Values ?? []).ToDictionary(v => v.Key.Trim(), v => ImportText.NormalizeValue(v.Value), StringComparer.OrdinalIgnoreCase)))
             .ToList();
 
-        var preview = await _bulk.PreviewAsync(body.Attribute, lines, cancellationToken);
+        var preview = await _bulk.PreviewAsync(rows, cancellationToken);
         if (!preview.IsValid)
         {
             return BadRequest(new BulkUpdateResponse(preview, null));
@@ -46,25 +50,27 @@ public sealed class BulkUpdateController : ControllerBase
 
         var items = preview.Rows
             .Where(r => r.Status == BulkRowStatus.Change)
-            .Select(r => new BulkApplyItem(r.ServerId!.Value, r.WsId, r.CurrentValue, r.NewValue!))
+            .Select(r => new BulkApplyItem(
+                r.ServerId!.Value,
+                r.WsId,
+                r.Values.Where(v => v.Changed).ToDictionary(v => v.Attribute, v => v.New, StringComparer.OrdinalIgnoreCase),
+                r.Values.Where(v => v.Changed).ToDictionary(v => v.Attribute, v => v.Current ?? string.Empty, StringComparer.OrdinalIgnoreCase)))
             .ToList();
 
-        var results = await _bulk.ApplyAsync(preview.Attribute, items, User.AcmsUserName(), cancellationToken);
+        var results = await _bulk.ApplyAsync(items, User.AcmsUserName(), cancellationToken);
         return Ok(new BulkUpdateResponse(preview, results));
     }
 }
 
 public sealed class BulkUpdateRequest
 {
-    /// <summary>Attribute to set, e.g. SPEED_SPEC.</summary>
-    public string? Attribute { get; init; }
-
+    /// <summary>One entry per machine: <c>{ "wsId": "DB-AXF-012S", "values": { "SPEED_SPEC": "28000" } }</c>.</summary>
     public List<BulkRowRequest>? Rows { get; init; }
 
     /// <summary>True (the default) only previews; false applies the changes.</summary>
     public bool DryRun { get; init; } = true;
 }
 
-public sealed record BulkRowRequest(string? WsId, string? Value);
+public sealed record BulkRowRequest(string? WsId, Dictionary<string, string?>? Values);
 
 public sealed record BulkUpdateResponse(BulkPreview Preview, IReadOnlyList<BulkApplyResult>? Results);

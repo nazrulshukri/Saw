@@ -1,4 +1,5 @@
 using Acms.Core.Abstractions;
+using Acms.Core.Import;
 using Acms.Core.Services;
 using Acms.Infrastructure.Awacs;
 using Acms.Infrastructure.Data;
@@ -36,6 +37,7 @@ public static class DependencyInjection
 
         services.AddOptions<AwacsOptions>().BindReplacingArrays(configuration.GetSection(AwacsOptions.SectionName));
         services.AddOptions<EquipmentRulesOptions>().BindReplacingArrays(configuration.GetSection(EquipmentRulesOptions.SectionName));
+        services.AddOptions<ImportOptions>().BindReplacingArrays(configuration.GetSection(ImportOptions.SectionName));
 
         var awacs = configuration.GetSection(AwacsOptions.SectionName).Get<AwacsOptions>() ?? new AwacsOptions();
 

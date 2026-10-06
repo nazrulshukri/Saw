@@ -20,7 +20,7 @@ The second URL does the same as **Save changes** on the AWACS page
 | Multi-server dashboard | `Pages/Index` – reachability and workstation count per server |
 | Equipment search across servers | `Pages/Equipment/Index`, `Details` |
 | Guided, verified edit | `Pages/Equipment/Edit` → `EquipmentChangeService` |
-| Bulk update (one attribute, many machines) | `Pages/Equipment/Bulk` → `BulkUpdateService` |
+| Import updates from Excel, CSV, Word, PDF or e-mail | `Pages/Equipment/Bulk` → `TableFileReader`, `ColumnMapper`, `BulkUpdateService` |
 | Central audit trail | `Pages/Audit`, table `AuditEntries` |
 | Server configuration | `Pages/Admin/Servers` (Administrator only) |
 | Windows Auth + AD groups → roles | `Security/AdGroupClaimsTransformation` |
@@ -58,26 +58,39 @@ ACMS/
 Once the update has been sent, steps 6 and 7 always finish, even if the browser disconnects.
 Updates are never retried automatically; the re-read decides what really happened.
 
-## Bulk update (for example a new SPEED_SPEC list from IE)
+## Import updates (for example a new SPEED_SPEC list from IE)
 
-When IE sends a new UPH ("Change T Speed") for many machines, there is no need to look up each
-machine in MMSv3, open `awacs_editws.html` on its AWACS server and click **Save changes** one by one.
+When IE sends new values ("Change T Speed") for many machines, there is no need to open
+`awacs_editws.html` for each machine and click **Save changes**.
 
-1. Open **Bulk update** (Engineer or Administrator).
-2. Attribute to change: `SPEED_SPEC`.
-3. Paste the machines and new values. You can copy the rows straight from the e-mail or Excel table:
-   ACMS uses the **first column as the WSID** and the **last column as the new value**, so the columns in
-   between (package, state, Prod%, old T speed...) are ignored. Rows with `N/A` or no value are skipped,
-   and so is the header row.
-4. **Preview**. ACMS reads every active AWACS server (`wsdata.xml?ws=A,B,C`) to find the machine and its
-   current value. Nothing is changed yet. Each row shows *Will change*, *Already set*, *Skipped*,
-   *Not found*, *On several servers* or *Unknown* (a server could not be read).
-5. Untick any machine you want to leave out and click **Apply selected changes**.
-   Each machine is then changed (one `setwsattr` call), re-read, verified and audited, exactly like a
-   single edit. A machine whose value changed on AWACS after the preview is refused, not overwritten.
+1. Open **Import updates** (Engineer or Administrator).
+2. Upload the file you received: **Excel (.xlsx), CSV, Word (.docx), PDF, or the e-mail itself**
+   (Outlook *Save as* `.msg` or `.eml`). Or paste the table copied from the e-mail or Excel.
+3. **Read list.** ACMS takes the table whose title row has a `Ws` / `WSID` / `Machine` column
+   (title rows above it, other tables and e-mail signatures are skipped) and suggests what each
+   column is:
+   - `Ws` → **WSID** (the machine);
+   - a column named like an AWACS attribute (`SPEED_SPEC`, `Location`, `Area`...) → that attribute;
+   - a column listed in `Import:ColumnAliases` (`Change T Speed` → `SPEED_SPEC`) → that attribute;
+   - everything else (Package, State, Prod%, the old Tspeed...) → ignored.
 
-Running the same list again afterwards should show every machine as *Already set*, which is a quick
-cross-check that all values are on AWACS.
+   Change any column if needed and click **Preview with these columns**. Several attribute
+   columns can be imported at once (for example SPEED_SPEC and LOCATION).
+4. The preview reads every active AWACS server (`wsdata.xml?ws=A,B,C`) and shows, per machine,
+   the server, `current → new` per attribute and a status: *Will change*, *Already set*,
+   *Skipped* (empty or `N/A`), *Not found*, *On several servers*, *Unknown* (a server could not be
+   read) or *Invalid*. Nothing has been changed yet.
+5. Untick machines you want to leave out and click **Apply selected changes**. Each machine is
+   written with one `setwsattr` call, re-read, verified and audited, exactly like a single edit.
+   A value that changed on AWACS after the preview is refused, not overwritten.
+
+Importing the same file again afterwards should show every machine as *Already set*, a quick
+cross-check that all values are on AWACS. Empty cells and `N/A` never clear a value; use the
+equipment edit page for that.
+
+PDF tables are read from the text positions on the page. This works for PDFs made from Excel,
+Word or e-mail; scanned PDFs (images) cannot be read. Excel or the e-mail itself is the most
+reliable source.
 
 Why not let a script fill in `awacs_editws.html` and click the button? The ITEC document says to stick
 to the documented URLs, and a scripted browser breaks whenever the page layout changes. The
@@ -85,9 +98,15 @@ to the documented URLs, and a scripted browser breaks whenever the page layout c
 
 ## Run it locally
 
-You need the .NET 8 SDK. Development mode uses SQLite, a fake AWACS with demo
-workstations, and a fake signed-in user (`DEV\developer`, Administrator), so neither AWACS
-nor Active Directory is required.
+You need the .NET 8 SDK. Development mode uses SQLite and a fake signed-in user
+(`DEV\developer`, Administrator), so Active Directory is not required. It talks to the real AWACS
+servers you add under **Servers**, for example the test server
+`http://myser01ms073.nws.nexperia.com:8080/` (note the port from `http_port` in `awacs.cfg`).
+
+To try ACMS without any AWACS server, switch on **demo mode**: set `Awacs:UseFake` and
+`Database:SeedDemoServers` to `true` in `appsettings.Development.json` and delete
+`src/Acms.Web/acms-dev.db`. A yellow *DEMO MODE* bar is then shown on every page; the machines
+and values are fake and nothing is sent to AWACS.
 
 ```bash
 cd ACMS
@@ -99,7 +118,8 @@ Open the URL printed in the console. To try other roles, change
 `Acms:Security:DevAuthentication:Roles` in `src/Acms.Web/appsettings.Development.json`
 to `["Engineer"]` or `["Viewer"]`. Delete `src/Acms.Web/acms-dev.db` to start from empty data.
 
-From Visual Studio, open `Acms.sln` and run the `Acms.Web` profile.
+From Visual Studio, open `Acms.sln`, right-click **Acms.Web** → *Set as Startup Project*, choose the
+`https` profile and press F5. (The other projects are libraries and cannot be started.)
 
 ## Configuration
 
@@ -122,6 +142,8 @@ All settings are in `src/Acms.Web/appsettings.json`. On the server, override the
 | `Awacs:UseDefaultCredentials` | Call AWACS as the app pool account (Windows auth) |
 | `EquipmentRules:ReadOnlyAttributes` | Attributes ACMS never changes (`WSID`, and `UPDATED`, which AWACS stamps on save) |
 | `EquipmentRules:KnownAttributes` | Attributes that can be filled in even when empty. AWACS leaves empty attributes out of `wsdata.xml`, so without this list e.g. an empty `AREA` could not be set |
+| `Import:ColumnAliases` | Column titles that mean an attribute, e.g. `"Change T Speed": "SPEED_SPEC"` |
+| `Import:MaxFileSizeMb` | Largest file accepted on the import page (default 10) |
 | `EquipmentRules:AllowNewAttributes` | Allow any other attribute name (default off, so typos cannot create attributes) |
 
 Roles:
@@ -168,9 +190,12 @@ configuration only and no code changes:
 
 ## Not implemented on purpose
 
-- **Add / delete equipment.** AWACS does not document create or delete interfaces
-  (pending ITEC). The buttons are visible but disabled. When ITEC documents them, add them
-  to `IAwacsClient` and follow the same validate → apply → verify → audit pattern.
+- **Add / delete machines.** The ITEC document has no URL to create or delete a workstation and
+  says "If more functionality is needed please ask ITEC". The AWACS edit page has a *Delete* button,
+  but how it works is not documented, so ACMS does not copy it. The buttons are visible but
+  disabled; an imported machine that does not exist is reported as *Not found*. When ITEC
+  documents the URLs, add them to `IAwacsClient` and follow the same validate → apply → verify →
+  audit pattern.
 - **Optional `wswodata.xml`** (work order data) is not used yet.
 
 ## REST API
@@ -187,8 +212,7 @@ PUT  /api/servers/{id}/workstations/{wsId}/attributes      (Engineer, Administra
      → 200 Success/NoChange, 400 Rejected, 409 conflict, 502 AWACS failure
 GET  /api/audit?serverId=&wsId=&userName=&action=&outcome=&fromUtc=&toUtc=&page=&pageSize=
 POST /api/bulk-update                                       (Engineer, Administrator)
-     { "attribute": "SPEED_SPEC",
-       "rows": [ { "wsId": "DB-AXF-012S", "value": "28000" } ],
+     { "rows": [ { "wsId": "DB-AXF-012S", "values": { "SPEED_SPEC": "28000" } } ],
        "dryRun": true }
      → preview, plus results when "dryRun": false
 ```
@@ -198,14 +222,13 @@ with your Windows login:
 
 ```powershell
 $body = @{
-  attribute = "SPEED_SPEC"
-  dryRun    = $true            # look first, then run again with $false
-  rows      = @(Import-Csv .\new-uph.csv | ForEach-Object { @{ wsId = $_.Ws; value = $_.'Change T Speed' } })
-} | ConvertTo-Json -Depth 3
+  dryRun = $true            # look first, then run again with $false
+  rows   = @(Import-Csv .\new-uph.csv | ForEach-Object { @{ wsId = $_.Ws; values = @{ SPEED_SPEC = $_.'Change T Speed' } } })
+} | ConvertTo-Json -Depth 4
 
 $r = Invoke-RestMethod https://acms.company.local/api/bulk-update -Method Post `
        -UseDefaultCredentials -ContentType "application/json" -Body $body
-$r.preview.rows | Format-Table wsId, serverName, currentValue, newValue, status
+$r.preview.rows | Format-Table wsId, serverName, status, message
 ```
 
 ## Project phases

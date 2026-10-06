@@ -1,9 +1,10 @@
 @page
+@using Acms.Core.Import
 @using Acms.Core.Services
 @using Acms.Web.Security
 @model Acms.Web.Pages.Equipment.BulkModel
 @{
-    ViewData["Title"] = "Bulk update";
+    ViewData["Title"] = "Import updates";
 
     static string StatusClass(BulkRowStatus status) => status switch
     {
@@ -14,6 +15,8 @@
         BulkRowStatus.Unknown => "bg-warning text-dark",
         _ => "bg-danger",
     };
+
+    static string Shown(string? value) => string.IsNullOrEmpty(value) ? "(empty)" : value;
 
     static string StatusText(BulkRowStatus status) => status switch
     {
@@ -27,49 +30,109 @@
     };
 }
 
-<h1 class="h3 mb-1">Bulk update</h1>
+<h1 class="h3 mb-1">Import updates</h1>
 <p class="text-muted mb-3">
-    Set one attribute on many machines at once, for example a new <span class="mono">SPEED_SPEC</span> list from IE.
-    ACMS finds the AWACS server of every machine, shows what will change, and only changes AWACS after you confirm.
+    Upload the update list you received (Excel, CSV, Word, PDF or the e-mail itself) or paste the table.
+    ACMS finds every machine on its AWACS server, shows what will change, and only writes to AWACS after you confirm.
 </p>
 
-<form method="post" class="card mb-4">
+@* ---------- Step 1: file or pasted table ---------- *@
+<form method="post" enctype="multipart/form-data" class="card mb-4">
     <div class="card-body">
         <div class="row g-3">
-            <div class="col-md-3">
-                <label asp-for="Attribute" class="form-label">Attribute to change</label>
-                <input asp-for="Attribute" class="form-control mono" list="knownAttributes" autocomplete="off" />
-                <datalist id="knownAttributes">
-                    @foreach (var name in Model.KnownAttributes)
-                    {
-                        <option value="@name"></option>
-                    }
-                </datalist>
-            </div>
-            <div class="col-md-9">
-                <label asp-for="Input" class="form-label">Machines and new values</label>
-                <textarea asp-for="Input" class="form-control mono" rows="8" spellcheck="false"
-                          placeholder="DB-AXF-012S	28000&#10;DB-AXF-013S	46000&#10;DB-AXF-014S	42000"></textarea>
+            <div class="col-lg-5">
+                <label asp-for="Upload" class="form-label fw-semibold">1. Upload a file</label>
+                <input asp-for="Upload" type="file" class="form-control" accept="@string.Join(",", Model.SupportedExtensions)" />
                 <div class="form-text">
-                    One machine per line: WSID and new value. You can paste rows straight from Excel or an e-mail table:
-                    the first column is used as the WSID and the last column as the new value. Rows with N/A or no value are skipped.
+                    Excel (.xlsx), CSV, Word (.docx), PDF, or an e-mail saved from Outlook (.msg or .eml).
+                    ACMS takes the table whose first column (or column titled Ws / WSID / Machine) holds the machines.
                 </div>
+            </div>
+            <div class="col-lg-7">
+                <label asp-for="Pasted" class="form-label fw-semibold">... or paste the table</label>
+                <textarea asp-for="Pasted" class="form-control mono" rows="5" spellcheck="false"
+                          placeholder="Ws	SPEED_SPEC&#10;DB-AXF-012S	28000&#10;DB-AXF-013S	46000"></textarea>
+                <div class="form-text">Copy the rows straight from the e-mail or Excel (with the title row if you can).</div>
             </div>
         </div>
     </div>
     <div class="card-footer bg-white">
-        <button type="submit" asp-page-handler="Preview" class="btn btn-primary">Preview</button>
-        <span class="text-muted small ms-2">Nothing is changed on AWACS until you confirm.</span>
+        <button type="submit" asp-page-handler="Read" class="btn btn-primary">Read list</button>
+        <span class="text-muted small ms-2">Nothing is changed on AWACS yet.</span>
     </div>
 </form>
+
+@if (Model.Error is not null)
+{
+    <div class="alert alert-warning">@Model.Error</div>
+}
 
 @if (Model.Info is not null)
 {
     <div class="alert alert-info">@Model.Info</div>
 }
 
-@if (Model.Preview is { } preview)
+@if (Model.Table is { } table && Model.Results is null)
 {
+    @* ---------- Step 2: column mapping ---------- *@
+    <form method="post" class="card mb-4">
+        <input type="hidden" asp-for="TableJson" />
+        <div class="card-header bg-white">
+            <span class="fw-semibold">2. Columns</span>
+            <span class="text-muted small ms-2">
+                @table.Source &middot; @table.Rows.Count row(s)@(table.HasHeader ? "" : " · no title row found")
+            </span>
+        </div>
+        <div class="card-body">
+            <p class="small text-muted mb-2">
+                Choose what each column is: <span class="mono">WSID</span> for the machine, an AWACS attribute
+                (for example <span class="mono">SPEED_SPEC</span>) to write that column to AWACS, or leave it empty to ignore it.
+            </p>
+            @if (Model.MappingErrors.Count > 0)
+            {
+                <div class="alert alert-warning py-2">
+                    @foreach (var error in Model.MappingErrors)
+                    {
+                        <div>@error</div>
+                    }
+                </div>
+            }
+            <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0">
+                    <thead><tr><th>Column</th><th>Example values</th><th style="min-width: 14rem">Write to</th></tr></thead>
+                    <tbody>
+                    @for (var c = 0; c < table.Headers.Count; c++)
+                    {
+                        <tr>
+                            <td class="fw-semibold">@table.Headers[c]</td>
+                            <td class="mono small text-muted">@string.Join(" · ", Model.Samples(c))</td>
+                            <td>
+                                <input name="Mapping[@c]" value="@(c < Model.Mapping.Count ? Model.Mapping[c] : "")"
+                                       class="form-control form-control-sm mono" list="mappingTargets"
+                                       placeholder="(ignore)" autocomplete="off" aria-label="Write column @table.Headers[c] to" />
+                            </td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+            <datalist id="mappingTargets">
+                <option value="@ColumnMapper.WsId"></option>
+                @foreach (var name in Model.KnownAttributes)
+                {
+                    <option value="@name"></option>
+                }
+            </datalist>
+        </div>
+        <div class="card-footer bg-white">
+            <button type="submit" asp-page-handler="Preview" class="btn btn-outline-primary">Preview with these columns</button>
+        </div>
+    </form>
+}
+
+@if (Model.Preview is { } preview && Model.Results is null)
+{
+    @* ---------- Step 3: preview and apply ---------- *@
     @if (!preview.IsValid)
     {
         <div class="alert alert-warning">
@@ -87,17 +150,21 @@
         }
 
         var changes = preview.Count(BulkRowStatus.Change);
+        var skipped = preview.Count(BulkRowStatus.NoValue) + preview.Count(BulkRowStatus.Duplicate);
+        var problems = preview.Rows.Count - changes - preview.Count(BulkRowStatus.NoChange) - skipped;
 
-        <form method="post" class="card" id="applyForm" data-count="@changes">
-            <input type="hidden" asp-for="Attribute" />
-            <input type="hidden" asp-for="Input" />
+        <form method="post" class="card" id="applyForm">
+            <input type="hidden" asp-for="TableJson" />
+            @for (var c = 0; c < Model.Mapping.Count; c++)
+            {
+                <input type="hidden" name="Mapping[@c]" value="@Model.Mapping[c]" />
+            }
 
-            <div class="card-header bg-white d-flex flex-wrap gap-3 align-items-center">
-                <span class="fw-semibold">Preview of <span class="mono">@preview.Attribute</span></span>
+            <div class="card-header bg-white d-flex flex-wrap gap-2 align-items-center">
+                <span class="fw-semibold me-1">3. Preview</span>
                 <span class="badge bg-primary">@changes to change</span>
                 <span class="badge bg-secondary">@preview.Count(BulkRowStatus.NoChange) already set</span>
-                <span class="badge bg-light text-dark">@(preview.Count(BulkRowStatus.NoValue) + preview.Count(BulkRowStatus.Duplicate)) skipped</span>
-                @{ var problems = preview.Rows.Count - changes - preview.Count(BulkRowStatus.NoChange) - preview.Count(BulkRowStatus.NoValue) - preview.Count(BulkRowStatus.Duplicate); }
+                <span class="badge bg-light text-dark">@skipped skipped</span>
                 @if (problems > 0)
                 {
                     <span class="badge bg-danger">@problems need attention</span>
@@ -107,37 +174,52 @@
             <div class="table-responsive">
                 <table class="table table-sm align-middle mb-0">
                     <thead>
-                        <tr>
-                            <th class="text-center">Apply</th>
-                            <th>Line</th>
-                            <th>WSID</th>
-                            <th>Server</th>
-                            <th>Current</th>
-                            <th>New</th>
-                            <th>Status</th>
-                        </tr>
+                        <tr><th class="text-center">Apply</th><th>Row</th><th>WSID</th><th>Server</th><th>Values (current &rarr; new)</th><th>Status</th></tr>
                     </thead>
                     <tbody>
                     @{ var k = 0; }
                     @foreach (var row in preview.Rows)
                     {
-                        <tr class="@(row.Status == BulkRowStatus.Change ? "" : "text-muted")">
+                        var isChange = row.Status == BulkRowStatus.Change;
+                        <tr class="@(isChange ? "" : "text-muted")">
                             <td class="text-center">
-                                @if (row.Status == BulkRowStatus.Change)
+                                @if (isChange)
                                 {
                                     <input type="checkbox" class="form-check-input" asp-for="Items[k].Selected" aria-label="Apply @row.WsId" />
                                     <input type="hidden" asp-for="Items[k].ServerId" />
                                     <input type="hidden" asp-for="Items[k].WsId" />
-                                    <input type="hidden" asp-for="Items[k].Current" />
-                                    <input type="hidden" asp-for="Items[k].NewValue" />
+                                    @for (var v = 0; v < Model.Items[k].Values.Count; v++)
+                                    {
+                                        <input type="hidden" asp-for="Items[k].Values[v].Attribute" />
+                                        <input type="hidden" asp-for="Items[k].Values[v].Current" />
+                                        <input type="hidden" asp-for="Items[k].Values[v].New" />
+                                    }
                                     k++;
                                 }
                             </td>
-                            <td class="small">@row.LineNumber</td>
+                            <td class="small">@row.RowNumber</td>
                             <td class="mono">@row.WsId</td>
                             <td>@row.ServerName</td>
-                            <td class="mono">@row.CurrentValue</td>
-                            <td class="mono @(row.Status == BulkRowStatus.Change ? "fw-semibold" : "")">@row.NewValue</td>
+                            <td class="small">
+                                @foreach (var value in row.Values)
+                                {
+                                    <div class="mono">
+                                        <span class="text-muted">@value.Attribute:</span>
+                                        @if (value.Changed)
+                                        {
+                                            <span>@Shown(value.Current)</span> <span>&rarr;</span> <span class="fw-semibold">@value.New</span>
+                                        }
+                                        else if (row.ServerId is not null)
+                                        {
+                                            <span>@value.New</span> <span class="text-muted">(already set)</span>
+                                        }
+                                        else
+                                        {
+                                            <span>@value.New</span>
+                                        }
+                                    </div>
+                                }
+                            </td>
                             <td>
                                 <span class="badge @StatusClass(row.Status)">@StatusText(row.Status)</span>
                                 @if (!string.IsNullOrEmpty(row.Message))
@@ -156,7 +238,7 @@
                 <div class="card-footer bg-white">
                     <button type="submit" asp-page-handler="Apply" class="btn btn-primary">Apply selected changes</button>
                     <span class="text-muted small ms-2">
-                        Each machine is changed, re-read and verified one by one, and recorded in the audit trail.
+                        Each machine is written to AWACS, re-read, verified and recorded in the audit trail, one by one.
                     </span>
                 </div>
             }
@@ -170,7 +252,7 @@
 
     <div class="card">
         <div class="card-header bg-white d-flex flex-wrap gap-3 align-items-center">
-            <span class="fw-semibold">Result for <span class="mono">@Model.Attribute</span></span>
+            <span class="fw-semibold">Result</span>
             <span class="badge bg-success">@ok succeeded</span>
             @if (ok < results.Count)
             {
@@ -180,21 +262,28 @@
         </div>
         <div class="table-responsive">
             <table class="table table-sm align-middle mb-0">
-                <thead>
-                    <tr><th>WSID</th><th>Server</th><th>Before</th><th>After (re-read)</th><th>Outcome</th></tr>
-                </thead>
+                <thead><tr><th>WSID</th><th>Server</th><th>Before &rarr; after (re-read from AWACS)</th><th>Outcome</th></tr></thead>
                 <tbody>
                 @foreach (var r in results)
                 {
-                    r.Result.Before.TryGetValue(Model.Attribute.Trim(), out var before);
-                    r.Result.After.TryGetValue(Model.Attribute.Trim(), out var after);
                     <tr>
                         <td class="mono">
                             <a asp-page="Details" asp-route-serverId="@r.Item.ServerId" asp-route-wsId="@r.Item.WsId">@r.Item.WsId</a>
                         </td>
                         <td>@r.ServerName</td>
-                        <td class="mono">@(before ?? r.Item.ExpectedCurrent)</td>
-                        <td class="mono @(r.Result.Succeeded ? "" : "text-danger fw-semibold")">@after</td>
+                        <td class="small">
+                            @foreach (var (name, _) in r.Item.NewValues)
+                            {
+                                r.Result.Before.TryGetValue(name, out var before);
+                                r.Result.After.TryGetValue(name, out var after);
+                                var failed = r.Result.Mismatches.Any(m => string.Equals(m.Name, name, StringComparison.OrdinalIgnoreCase));
+                                <div class="mono">
+                                    <span class="text-muted">@name:</span>
+                                    @Shown(before ?? r.Item.ExpectedCurrent.GetValueOrDefault(name)) &rarr;
+                                    <span class="@(failed ? "text-danger fw-semibold" : "")">@Shown(after)</span>
+                                </div>
+                            }
+                        </td>
                         <td>
                             <partial name="_OutcomeBadge" model="r.Result.Outcome" />
                             <span class="small ms-1">@r.Result.Message</span>
@@ -214,7 +303,7 @@
         if (applyForm) {
             applyForm.addEventListener('submit', function (e) {
                 var selected = applyForm.querySelectorAll('input[type=checkbox]:checked').length;
-                if (!confirm('Change ' + selected + ' machine(s) on AWACS now?')) {
+                if (!confirm('Write the new values to ' + selected + ' machine(s) on AWACS now?')) {
                     e.preventDefault();
                 }
             });
