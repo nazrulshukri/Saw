@@ -66,6 +66,15 @@ public class BulkModel : PageModel
     {
     }
 
+    /// <summary>CSV template (opens in Excel) with Ws and the usual workstation attributes as columns.</summary>
+    public IActionResult OnGetTemplate()
+    {
+        var header = string.Join(",", new[] { "Ws" }.Concat(_import.TemplateColumns));
+        var example = string.Join(",", new[] { "DB-QE1-001S" }.Concat(_import.TemplateColumns.Select(_ => "")));
+        return File(System.Text.Encoding.UTF8.GetPreamble().Concat(System.Text.Encoding.UTF8.GetBytes(header + "\r\n" + example + "\r\n")).ToArray(),
+            "text/csv", "acms-update-template.csv");
+    }
+
     /// <summary>Step 1: read the uploaded file or pasted text, suggest the column mapping and preview.</summary>
     public async Task<IActionResult> OnPostReadAsync(CancellationToken cancellationToken)
     {

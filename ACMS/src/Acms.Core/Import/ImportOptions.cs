@@ -11,6 +11,10 @@ public sealed class ImportOptions
     /// </summary>
     public Dictionary<string, string> ColumnAliases { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>Columns of the Excel template offered on the import page (after Ws).</summary>
+    public string[] TemplateColumns { get; set; } =
+        ["COMPUTER", "CONTROL", "EQUIPMENT", "LOCATION", "MODEL", "PORTNAME", "SECSID", "SPEED_SPEC", "SRCFILE"];
+
     /// <summary>Largest file accepted on the import page.</summary>
     public int MaxFileSizeMb { get; set; } = 10;
 }
