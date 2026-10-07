@@ -166,6 +166,15 @@
         }
 
         var changes = preview.Count(BulkRowStatus.Change) + preview.Count(BulkRowStatus.Create);
+
+        @if (preview.Count(BulkRowStatus.NotFound) > 0 && Model.CreateOnServerId is null && Model.Servers.Count > 0)
+        {
+            <div class="alert alert-info py-2">
+                @preview.Count(BulkRowStatus.NotFound) machine(s) do not exist on any server yet. To add them, choose
+                <strong>"Add them as new machines on ..."</strong> under <em>Machines not found on any server</em> above
+                and click <strong>Preview with these columns</strong>.
+            </div>
+        }
         var skipped = preview.Count(BulkRowStatus.NoValue) + preview.Count(BulkRowStatus.Duplicate);
         var problems = preview.Rows.Count - changes - preview.Count(BulkRowStatus.NoChange) - skipped;
 
